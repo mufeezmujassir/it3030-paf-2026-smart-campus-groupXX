@@ -18,4 +18,8 @@ public class ProfileUpdateRequest {
     
     private String department;
     private String studentId;
+    private String qualification;
+    private String designation;
+    private String technicianSpecialization;
+    private Integer experienceYears;
 }
