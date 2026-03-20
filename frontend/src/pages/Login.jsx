@@ -15,8 +15,8 @@ const Login = () => {
         const params = new URLSearchParams(location.search);
         const error = params.get('error');
         if (error) {
-            toast.error(error === 'Access Denied: You are not registered in the system' 
-                ? 'Credential failed: You don\'t have access to login' 
+            toast.error(error === 'Access Denied: You are not registered in the system'
+                ? 'Credential failed: You don\'t have access to login'
                 : error);
         }
     }, [location]);
@@ -42,9 +42,9 @@ const Login = () => {
         <div className="flex min-h-screen bg-surface font-sans">
             {/* Left Side: Branding/Image */}
             <div className="hidden lg:flex lg:w-1/2 relative bg-primary flex-col justify-between p-12 text-white overflow-hidden">
-                <img 
-                    src={loginBg} 
-                    alt="Campus Background" 
+                <img
+                    src={loginBg}
+                    alt="Campus Background"
                     className="absolute inset-0 w-full h-full object-cover z-0 opacity-60"
                 />
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/40 to-accent/40 z-0"></div>
@@ -52,7 +52,7 @@ const Login = () => {
                     <Leaf className="w-8 h-8" />
                     <span className="text-2xl font-bold tracking-tight">MapleLink</span>
                 </div>
-                
+
                 <div className="relative z-10 max-w-lg mt-16 mb-auto">
                     <h1 className="text-6xl font-extrabold leading-tight mb-6">
                         Cultivating Excellence, Connecting Campus.
@@ -60,7 +60,7 @@ const Login = () => {
                     <p className="text-xl text-white/80 mb-12">
                         Experience a unified ecosystem for learning management, facility scheduling, and technical support—all under one roof.
                     </p>
-                    
+
                     <div className="flex space-x-12 mt-8">
                         <div>
                             <p className="text-3xl font-bold">12k+</p>
@@ -82,13 +82,13 @@ const Login = () => {
             {/* Right Side: Login Form */}
             <div className="w-full lg:w-1/2 flex flex-col pt-6 px-4 sm:px-12 lg:px-24 xl:px-32">
                 <div className="flex justify-between items-center w-full mb-12">
-                     <div className="lg:hidden flex items-center space-x-2 text-primary">
+                    <div className="lg:hidden flex items-center space-x-2 text-primary">
                         <Leaf className="w-6 h-6" />
                         <span className="text-xl font-bold">MapleLink</span>
-                     </div>
-                     <button className="text-sm font-medium border border-gray-200 rounded-md px-4 py-2 hover:bg-gray-50 transition ml-auto">
-                         Sign In
-                     </button>
+                    </div>
+                    <button className="text-sm font-medium border border-gray-200 rounded-md px-4 py-2 hover:bg-gray-50 transition ml-auto">
+                        Sign In
+                    </button>
                 </div>
 
                 <div className="flex-1 flex flex-col justify-center max-w-md w-full mx-auto">
@@ -114,13 +114,13 @@ const Login = () => {
                             <div className="w-full border-t border-gray-200"></div>
                         </div>
                         <div className="relative flex justify-center text-sm font-medium">
-                            <span className="px-4 bg-surface text-gray-500 tracking-wider">ADMIN CREDENTIALS</span>
+                            <span className="px-4 bg-surface text-gray-500 tracking-wider">OR</span>
                         </div>
                     </div>
 
                     <form onSubmit={handleLocalSubmit} className="space-y-5">
                         <div className="space-y-1">
-                            <label className="text-sm font-medium text-text-primary">Institutional Username</label>
+                            <label className="text-sm font-medium text-text-primary">Institutional Email</label>
                             <div className="relative">
                                 <Mail className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                 <input
@@ -138,7 +138,6 @@ const Login = () => {
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="text-sm font-medium text-text-primary">Security Password</label>
-                                <a href="#" className="text-sm font-medium text-primary hover:text-accent">Forgot password?</a>
                             </div>
                             <div className="relative">
                                 <Lock className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -164,7 +163,7 @@ const Login = () => {
                             disabled={loading}
                             className="w-full flex items-center justify-center py-3 px-4 bg-primary hover:bg-primary-hover text-white rounded-lg font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-all disabled:opacity-70 disabled:cursor-not-allowed group"
                         >
-                            {loading ? 'Signing in...' : 'Sign In as Administrator'}
+                            {loading ? 'Signing in...' : 'Sign In'}
                             {!loading && <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />}
                         </button>
                     </form>
@@ -183,7 +182,7 @@ const Login = () => {
                 {/* Footer */}
                 <div className="mt-auto py-8 flex flex-col sm:flex-row items-center justify-between text-xs text-center border-t border-gray-100 mt-12">
                     <p className="text-text-secondary mb-4 sm:mb-0">
-                        <span className="font-semibold text-primary inline-flex items-center"><Leaf className="w-3 h-3 mr-1"/>MapleLink</span> © 2024 MapleLink Systems. All rights reserved.
+                        <span className="font-semibold text-primary inline-flex items-center"><Leaf className="w-3 h-3 mr-1" />MapleLink</span> © {new Date().getFullYear()} MapleLink Systems. All rights reserved.
                     </p>
                     <div className="flex space-x-6 text-gray-500 font-medium">
                         <a href="#" className="hover:text-primary">Help Center</a>

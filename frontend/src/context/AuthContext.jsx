@@ -14,9 +14,10 @@ export const AuthProvider = ({ children }) => {
         const token = localStorage.getItem('accessToken');
         const role = localStorage.getItem('userRole');
         const email = localStorage.getItem('userEmail');
+        const fullName = localStorage.getItem('userFullName');
         
         if (token && role && email) {
-            setUser({ email, role });
+            setUser({ email, role, fullName });
         }
         setLoading(false);
     }, []);
@@ -66,13 +67,14 @@ export const AuthProvider = ({ children }) => {
             return;
         }
 
-        const { accessToken, refreshToken, role, email } = data;
+        const { accessToken, refreshToken, role, email, fullName } = data;
         localStorage.setItem('accessToken', accessToken);
         localStorage.setItem('refreshToken', refreshToken);
         localStorage.setItem('userRole', role);
         localStorage.setItem('userEmail', email);
+        if (fullName) localStorage.setItem('userFullName', fullName);
         
-        setUser({ email, role });
+        setUser({ email, role, fullName: fullName || localStorage.getItem('userFullName') });
         
         toast.success('Login successful!');
         
@@ -89,6 +91,20 @@ export const AuthProvider = ({ children }) => {
         handleAuthResponse(data);
     };
 
+    const updateUser = (data) => {
+        const { role, email, fullName } = data;
+        if (role) localStorage.setItem('userRole', role);
+        if (email) localStorage.setItem('userEmail', email);
+        if (fullName) localStorage.setItem('userFullName', fullName);
+        
+        setUser(prev => ({ 
+            ...prev, 
+            ...(role && { role }), 
+            ...(email && { email }), 
+            ...(fullName && { fullName }) 
+        }));
+    };
+
     const logout = () => {
         api.post('/auth/logout').catch(() => {});
         localStorage.removeItem('accessToken');
@@ -102,7 +118,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, googleLogin, verifyOtp, logout, loginFromRedirect }}>
+        <AuthContext.Provider value={{ user, loading, login, googleLogin, verifyOtp, logout, loginFromRedirect, updateUser }}>
             {!loading && children}
         </AuthContext.Provider>
     );

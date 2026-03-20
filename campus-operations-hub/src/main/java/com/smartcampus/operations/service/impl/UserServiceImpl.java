@@ -86,6 +86,10 @@ public class UserServiceImpl implements UserService {
         user.setFullName(request.getFirstName() + " " + request.getLastName());
         user.setDepartment(request.getDepartment());
         user.setStudentId(request.getStudentId());
+        user.setQualification(request.getQualification());
+        user.setDesignation(request.getDesignation());
+        user.setTechnicianSpecialization(request.getTechnicianSpecialization());
+        user.setExperienceYears(request.getExperienceYears());
 
         User updatedUser = userRepository.save(user);
         log.info("User profile updated for email: {}", email);
