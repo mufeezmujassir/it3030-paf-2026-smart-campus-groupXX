@@ -15,25 +15,25 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
             { icon: <Users size={20} />, label: 'User Directory', path: '/admin/users' },
             { icon: <Building size={20} />, label: 'Assets & Labs', path: '/admin/assets' },
             { icon: <Calendar size={20} />, label: 'Schedules', path: '/admin/schedules' },
-            { icon: <Ticket size={20} />, label: 'Support Tickets', path: '/admin/tickets' },
+            { icon: <Ticket size={20} />, label: 'Support Tickets', path: '/tickets' }, 
         ],
         STUDENT: [
             { icon: <LayoutDashboard size={20} />, label: 'My Dashboard', path: '/student' },
             { icon: <BookOpen size={20} />, label: 'My Courses', path: '/student/courses' },
             { icon: <GraduationCap size={20} />, label: 'Grades', path: '/student/grades' },
-            { icon: <Ticket size={20} />, label: 'Help Desk', path: '/student/tickets' },
+            { icon: <Ticket size={20} />, label: 'Help Desk', path: '/tickets' },
         ],
         STAFF: [
             { icon: <LayoutDashboard size={20} />, label: 'Staff Portal', path: '/staff' },
             { icon: <ClipboardList size={20} />, label: 'Management', path: '/staff/manage' },
             { icon: <Briefcase size={20} />, label: 'My Department', path: '/staff/department' },
-            { icon: <Ticket size={20} />, label: 'Service Requests', path: '/staff/tickets' },
+            { icon: <Ticket size={20} />, label: 'Service Requests', path: '/tickets' },
         ],
         TECHNICIAN: [
             { icon: <LayoutDashboard size={20} />, label: 'Tech Console', path: '/technician' },
             { icon: <Wrench size={20} />, label: 'Maintenance', path: '/technician/maintenance' },
+            { icon: <Ticket size={20} />, label: 'My Tickets', path: '/tickets' },  
             { icon: <HardHat size={20} />, label: 'Safety Logs', path: '/technician/safety' },
-            { icon: <Leaf size={20} />, label: 'Environment', path: '/technician/environment' },
         ]
     };
 

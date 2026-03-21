@@ -1,4 +1,4 @@
-import { useEffect, useState, useContext } from 'react';
+import { useEffect, useState} from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     getTicketById, updateTicketStatus, assignTicket,
@@ -6,7 +6,7 @@ import {
     uploadAttachment, deleteAttachment,
     addComment, getComments, updateComment, deleteComment
 } from '../../services/ticketService';
-import { AuthContext } from '../../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 
 const STATUS_COLORS = {
     OPEN: 'bg-yellow-100 text-yellow-800',
@@ -26,7 +26,7 @@ const PRIORITY_COLORS = {
 const TicketDetail = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { user } = useContext(AuthContext);
+    const { user } = useAuth();
 
     const [ticket, setTicket] = useState(null);
     const [comments, setComments] = useState([]);

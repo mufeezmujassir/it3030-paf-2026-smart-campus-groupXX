@@ -1,7 +1,7 @@
-import { useEffect, useState, useContext } from 'react';
+import { useEffect, useState} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAllTickets, deleteTicket } from '../../services/ticketService';
-import { AuthContext } from '../../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 
 const STATUS_COLORS = {
     OPEN: 'bg-yellow-100 text-yellow-800',
@@ -19,7 +19,7 @@ const PRIORITY_COLORS = {
 };
 
 const TicketList = () => {
-    const { user } = useContext(AuthContext);
+    const { user } = useAuth();
     const navigate = useNavigate();
     const [tickets, setTickets] = useState([]);
     const [loading, setLoading] = useState(true);
