@@ -9,6 +9,9 @@ import UserManagement from '../pages/admin/UserManagement';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RoleBasedRoute } from './RoleBasedRoute';
+import TicketList from '../pages/tickets/TicketList';
+import CreateTicket from '../pages/tickets/CreateTicket';
+import TicketDetail from '../pages/tickets/TicketDetail';
 
 const AppRoutes = () => {
     return (
@@ -24,6 +27,11 @@ const AppRoutes = () => {
                 </ProtectedRoute>
             }>
                 <Route path="/settings" element={<ProfileSettings />} />
+
+                {/* Ticket Routes - accessible to all authenticated users */}
+                <Route path="/tickets" element={<TicketList />} />
+                <Route path="/tickets/create" element={<CreateTicket />} />
+                <Route path="/tickets/:id" element={<TicketDetail />} />
                 
                 {/* Admin Nested Routes */}
                 <Route path="/admin/*" element={
