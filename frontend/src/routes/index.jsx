@@ -12,6 +12,7 @@ import { RoleBasedRoute } from './RoleBasedRoute';
 import TicketList from '../pages/tickets/TicketList';
 import CreateTicket from '../pages/tickets/CreateTicket';
 import TicketDetail from '../pages/tickets/TicketDetail';
+import TechnicianDashboard from '../pages/technician/TechnicianDashboard';
 
 const AppRoutes = () => {
     return (
@@ -61,7 +62,7 @@ const AppRoutes = () => {
                 } />
                 <Route path="/technician" element={
                     <RoleBasedRoute allowedRoles={['TECHNICIAN']}>
-                        <div className="p-8">Technician Dashboard</div>
+                        <TechnicianDashboard />
                     </RoleBasedRoute>
                 } />
             </Route>
