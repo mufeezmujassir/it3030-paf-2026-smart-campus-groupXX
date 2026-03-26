@@ -7,6 +7,7 @@ import {
     addComment, getComments, updateComment, deleteComment
 } from '../../services/ticketService';
 import { useAuth } from '../../context/AuthContext';
+import { autoAssignTicket, getAvailableTechnicians } from '../../services/ticketService';
 
 const STATUS_STYLES = {
     OPEN: 'bg-amber-100 text-amber-800 border border-amber-200',
@@ -21,6 +22,17 @@ const PRIORITY_STYLES = {
     MEDIUM: 'bg-yellow-50 text-yellow-700 border border-yellow-200',
     HIGH: 'bg-orange-50 text-orange-700 border border-orange-200',
     CRITICAL: 'bg-red-50 text-red-700 border border-red-200',
+};
+
+const CATEGORY_SPECIALIZATION_MAP = {
+    ELECTRICAL: 'electrical',
+    PLUMBING: 'plumbing',
+    HVAC: 'hvac',
+    IT_EQUIPMENT: 'it',
+    FURNITURE: 'furniture',
+    CLEANING: 'cleaning',
+    SECURITY: 'security',
+    OTHER: '',
 };
 
 const Modal = ({ title, onClose, onConfirm, confirmLabel, confirmColor, children, loading }) => (
@@ -58,6 +70,9 @@ const TicketDetail = () => {
     const [comments, setComments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    const [technicians, setTechnicians] = useState([]);
+    const [assignMode, setAssignMode] = useState('auto');
 
     const [newComment, setNewComment] = useState('');
     const [editingCommentId, setEditingCommentId] = useState(null);
@@ -97,11 +112,26 @@ const TicketDetail = () => {
         fetchComments();
     }, [id]);
 
+    useEffect(() => {
+        if (showAssignModal && isAdmin) {
+            getAvailableTechnicians()
+                .then(res => setTechnicians(res.data))
+                .catch(() => console.error('Failed to load technicians'));
+        }
+    }, [showAssignModal]);
+
+
+
     const handleAssign = async () => {
-        if (!technicianId.trim()) return;
         setActionLoading(true);
         try {
-            const res = await assignTicket(id, technicianId.trim());
+            let res;
+            if (assignMode === 'auto') {
+                res = await autoAssignTicket(id);
+            } else {
+                if (!technicianId.trim()) return;
+                res = await assignTicket(id, technicianId.trim());
+            }
             setTicket(res.data);
             setShowAssignModal(false);
             setTechnicianId('');
@@ -657,13 +687,126 @@ const TicketDetail = () => {
             {showAssignModal && (
                 <Modal title="Assign Technician" onClose={() => setShowAssignModal(false)}
                        onConfirm={handleAssign} confirmLabel="Assign" loading={actionLoading}>
-                    <p className="text-sm mb-3" style={{ color: 'var(--color-text-secondary)' }}>
-                        Enter the User ID of the technician to assign.
-                    </p>
-                    <input value={technicianId} onChange={e => setTechnicianId(e.target.value)}
-                           placeholder="Technician User ID (UUID)"
-                           className="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none"
-                           style={{ borderColor: '#E8D5C4', backgroundColor: 'var(--color-background)', color: 'var(--color-text-primary)' }} />
+
+                    {/* Mode Toggle */}
+                    <div className="flex rounded-xl overflow-hidden border mb-4"
+                         style={{ borderColor: '#E8D5C4' }}>
+                        {['auto', 'manual'].map(mode => (
+                            <button key={mode} type="button"
+                                    onClick={() => setAssignMode(mode)}
+                                    className="flex-1 py-2 text-sm font-semibold capitalize transition"
+                                    style={{
+                                        backgroundColor: assignMode === mode ? 'var(--color-primary)' : 'var(--color-background)',
+                                        color: assignMode === mode ? 'white' : 'var(--color-text-secondary)',
+                                    }}>
+                                {mode === 'auto' ? '⚡ Auto Assign' : '👤 Manual'}
+                            </button>
+                        ))}
+                    </div>
+
+                    {assignMode === 'auto' ? (
+                        <div>
+                            <div className="rounded-xl p-4 mb-3"
+                                 style={{ backgroundColor: 'var(--color-background)' }}>
+                                <p className="text-sm font-semibold mb-1"
+                                   style={{ color: 'var(--color-text-primary)' }}>
+                                    🎯 Smart Auto-Assignment
+                                </p>
+                                <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                                    The system will automatically find the best technician
+                                    based on their specialization matching the ticket category:
+                                    <span className="font-bold ml-1"
+                                          style={{ color: 'var(--color-primary)' }}>
+                            {ticket?.category?.replace('_', ' ')}
+                        </span>
+                                </p>
+                            </div>
+                            {/* Available technicians preview */}
+                            {technicians.length > 0 && (
+                                <div>
+                                    <p className="text-xs font-semibold mb-2"
+                                       style={{ color: 'var(--color-text-secondary)' }}>
+                                        Available technicians:
+                                    </p>
+                                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                                        {technicians.map(t => (
+                                            <div key={t.id}
+                                                 className="flex items-center justify-between px-3 py-2 rounded-lg border"
+                                                 style={{ borderColor: '#E8D5C4', backgroundColor: 'var(--color-background)' }}>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                                                         style={{ backgroundColor: 'var(--color-primary)' }}>
+                                                        {t.fullName?.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-semibold"
+                                                           style={{ color: 'var(--color-text-primary)' }}>
+                                                            {t.fullName}
+                                                        </p>
+                                                        <p className="text-xs"
+                                                           style={{ color: 'var(--color-text-secondary)' }}>
+                                                            {t.technicianSpecialization || 'General'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {t.technicianSpecialization?.toLowerCase().includes(
+                                                    CATEGORY_SPECIALIZATION_MAP[ticket?.category] || ''
+                                                ) && (
+                                                    <span className="text-xs font-bold text-green-600">
+                                            ✓ Match
+                                        </span>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div>
+                            <p className="text-sm mb-3" style={{ color: 'var(--color-text-secondary)' }}>
+                                Select a technician manually:
+                            </p>
+                            {technicians.length > 0 ? (
+                                <div className="space-y-2 max-h-48 overflow-y-auto mb-3">
+                                    {technicians.map(t => (
+                                        <div key={t.id}
+                                             onClick={() => setTechnicianId(t.id)}
+                                             className="flex items-center justify-between px-3 py-2.5 rounded-xl border cursor-pointer transition"
+                                             style={{
+                                                 borderColor: technicianId === t.id ? 'var(--color-primary)' : '#E8D5C4',
+                                                 backgroundColor: technicianId === t.id ? '#FFF0EB' : 'var(--color-background)',
+                                             }}>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                                                     style={{ backgroundColor: 'var(--color-primary)' }}>
+                                                    {t.fullName?.charAt(0)}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-semibold"
+                                                       style={{ color: 'var(--color-text-primary)' }}>
+                                                        {t.fullName}
+                                                    </p>
+                                                    <p className="text-xs"
+                                                       style={{ color: 'var(--color-text-secondary)' }}>
+                                                        {t.technicianSpecialization || 'General'} • {t.email}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {technicianId === t.id && (
+                                                <span className="text-sm" style={{ color: 'var(--color-primary)' }}>✓</span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <input value={technicianId} onChange={e => setTechnicianId(e.target.value)}
+                                       placeholder="Technician User ID (UUID)"
+                                       className="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none mb-3"
+                                       style={{ borderColor: '#E8D5C4', backgroundColor: 'var(--color-background)', color: 'var(--color-text-primary)' }} />
+                            )}
+                        </div>
+                    )}
                 </Modal>
             )}
 

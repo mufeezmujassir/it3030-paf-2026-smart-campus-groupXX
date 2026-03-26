@@ -11,6 +11,8 @@ export const assignTicket = (id, technicianId) => api.post(`${TICKETS_URL}/${id}
 export const rejectTicket = (id, reason) => api.patch(`${TICKETS_URL}/${id}/reject`, { reason });
 export const addResolutionNotes = (id, resolutionNotes) => api.put(`${TICKETS_URL}/${id}/resolution`, { resolutionNotes });
 export const deleteTicket = (id) => api.delete(`${TICKETS_URL}/${id}`);
+export const autoAssignTicket = (id) => api.post(`${TICKETS_URL}/${id}/auto-assign`);
+export const getAvailableTechnicians = () => api.get(`${TICKETS_URL}/technicians`);
 
 // Attachments
 export const uploadAttachment = (ticketId, file) => {
