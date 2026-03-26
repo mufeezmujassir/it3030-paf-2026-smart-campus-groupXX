@@ -8,6 +8,8 @@ import com.smartcampus.operations.service.IncidentTicketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.smartcampus.operations.dto.TechnicianResponse;
+import java.util.Map;
 
 import java.util.List;
 import java.util.UUID;
@@ -164,6 +166,64 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
         }
 
         ticketRepository.delete(ticket);
+    }
+
+    private static final Map<String, String> CATEGORY_SPECIALIZATION_MAP = Map.of(
+            "ELECTRICAL", "electrical",
+            "PLUMBING", "plumbing",
+            "HVAC", "hvac",
+            "IT_EQUIPMENT", "it",
+            "FURNITURE", "furniture",
+            "CLEANING", "cleaning",
+            "SECURITY", "security",
+            "OTHER", ""
+    );
+
+    @Override
+    @Transactional
+    public TicketResponse autoAssignTicket(UUID id, String userEmail) {
+        User admin = getUserByEmail(userEmail);
+        if (admin.getRole() != Role.ADMIN) {
+            throw new UnauthorizedTicketAccessException();
+        }
+
+        IncidentTicket ticket = getTicketOrThrow(id);
+
+        String specialization = CATEGORY_SPECIALIZATION_MAP
+                .getOrDefault(ticket.getCategory().name(), "");
+
+        // Try to find a matching technician by specialization
+        Optional<User> matched = specialization.isEmpty()
+                ? Optional.empty()
+                : userRepository.findByRoleAndTechnicianSpecializationContainingIgnoreCase(
+                Role.TECHNICIAN, specialization);
+
+        // Fall back to any available technician
+        User technician = matched.orElseGet(() ->
+                userRepository.findByRole(Role.TECHNICIAN)
+                        .stream()
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "No technicians available for auto-assignment"))
+        );
+
+        ticket.setAssignedTo(technician);
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        return mapToResponse(ticketRepository.save(ticket));
+    }
+
+    @Override
+    public List<TechnicianResponse> getAvailableTechnicians() {
+        return userRepository.findByRole(Role.TECHNICIAN)
+                .stream()
+                .map(t -> TechnicianResponse.builder()
+                        .id(t.getId())
+                        .fullName(t.getFullName())
+                        .email(t.getEmail())
+                        .technicianSpecialization(t.getTechnicianSpecialization())
+                        .department(t.getDepartment())
+                        .build())
+                .collect(Collectors.toList());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

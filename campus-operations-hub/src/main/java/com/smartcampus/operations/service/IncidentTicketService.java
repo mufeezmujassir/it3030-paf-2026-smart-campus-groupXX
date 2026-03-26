@@ -25,4 +25,8 @@ public interface IncidentTicketService {
     TicketResponse addResolutionNotes(UUID id, TicketResolutionRequest request, String userEmail);
 
     void deleteTicket(UUID id, String userEmail);
+
+    TicketResponse autoAssignTicket(UUID id, String userEmail);
+
+    List<com.smartcampus.operations.dto.TechnicianResponse> getAvailableTechnicians();
 }

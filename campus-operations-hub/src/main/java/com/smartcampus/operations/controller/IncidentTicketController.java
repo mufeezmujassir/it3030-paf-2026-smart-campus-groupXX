@@ -85,4 +85,16 @@ public class IncidentTicketController {
         ticketService.deleteTicket(id, userDetails.getUsername());
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{id}/auto-assign")
+    public ResponseEntity<TicketResponse> autoAssign(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ticketService.autoAssignTicket(id, userDetails.getUsername()));
+    }
+
+    @GetMapping("/technicians")
+    public ResponseEntity<List<com.smartcampus.operations.dto.TechnicianResponse>> getTechnicians() {
+        return ResponseEntity.ok(ticketService.getAvailableTechnicians());
+    }
 }
