@@ -84,15 +84,20 @@ const TicketList = () => {
                     <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
                         {user?.role === 'ADMIN'
                             ? 'Manage institutional support requests and facility maintenance.'
-                            : 'Track and manage your submitted tickets.'}
+                            : user?.role === 'TECHNICIAN'
+                                ? 'View and manage tickets assigned to you.'
+                                : 'Track and manage your submitted tickets.'}
                     </p>
                 </div>
-                <button
-                    onClick={() => navigate('/tickets/create')}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition hover:opacity-90"
-                    style={{ backgroundColor: 'var(--color-primary)' }}>
-                    + New Ticket
-                </button>
+                {/* Only students and staff can create tickets */}
+                {(user?.role === 'STUDENT' || user?.role === 'STAFF') && (
+                    <button
+                        onClick={() => navigate('/tickets/create')}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition hover:opacity-90"
+                        style={{ backgroundColor: 'var(--color-primary)' }}>
+                        + New Ticket
+                    </button>
+                )}
             </div>
 
             {/* Stats Cards */}

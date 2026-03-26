@@ -28,10 +28,16 @@ const AppRoutes = () => {
             }>
                 <Route path="/settings" element={<ProfileSettings />} />
 
-                {/* Ticket Routes - accessible to all authenticated users */}
+                {/* Ticket Routes */}
                 <Route path="/tickets" element={<TicketList />} />
-                <Route path="/tickets/create" element={<CreateTicket />} />
                 <Route path="/tickets/:id" element={<TicketDetail />} />
+
+                {/* Only students and staff can create tickets */}
+                <Route path="/tickets/create" element={
+                    <RoleBasedRoute allowedRoles={['STUDENT', 'STAFF']}>
+                        <CreateTicket />
+                    </RoleBasedRoute>
+                } />
                 
                 {/* Admin Nested Routes */}
                 <Route path="/admin/*" element={
