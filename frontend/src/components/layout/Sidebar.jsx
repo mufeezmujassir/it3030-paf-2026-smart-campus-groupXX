@@ -19,6 +19,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
         ],
         STUDENT: [
             { icon: <LayoutDashboard size={20} />, label: 'My Dashboard', path: '/student' },
+            { icon: <Building size={20} />, label: 'Catalogue', path: '/resources' },
             { icon: <BookOpen size={20} />, label: 'My Courses', path: '/student/courses' },
             { icon: <GraduationCap size={20} />, label: 'Grades', path: '/student/grades' },
             { icon: <Ticket size={20} />, label: 'Help Desk', path: '/student/tickets' },
@@ -67,23 +68,26 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
             {/* Navigation */}
             <nav className="flex-1 px-4 py-8 space-y-1 overflow-y-auto">
                 <p className="px-4 mb-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Main Navigation</p>
-                {currentRoleMenu.map((item) => (
-                    <Link
-                        key={item.path}
-                        to={item.path}
-                        onClick={() => { if(window.innerWidth < 1024) closeSidebar() }}
-                        className={`flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${
-                            location.pathname === item.path 
-                            ? 'bg-primary text-white shadow-lg shadow-primary/25' 
-                            : 'text-text-secondary hover:bg-primary/[0.04] hover:text-primary'
-                        }`}
-                    >
-                        <div className={`transition-colors duration-300 ${location.pathname === item.path ? 'text-white' : 'text-gray-400 group-hover:text-primary'}`}>
-                            {item.icon}
-                        </div>
-                        <span>{item.label}</span>
-                    </Link>
-                ))}
+                {currentRoleMenu.map((item) => {
+                    const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+                    return (
+                        <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => { if(window.innerWidth < 1024) closeSidebar() }}
+                            className={`flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${
+                                isActive
+                                ? 'bg-primary text-white shadow-lg shadow-primary/25'
+                                : 'text-text-secondary hover:bg-primary/[0.04] hover:text-primary'
+                            }`}
+                        >
+                            <div className={`transition-colors duration-300 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-primary'}`}>
+                                {item.icon}
+                            </div>
+                            <span>{item.label}</span>
+                        </Link>
+                    )
+                })}
             </nav>
 
             {/* Bottom Section */}
