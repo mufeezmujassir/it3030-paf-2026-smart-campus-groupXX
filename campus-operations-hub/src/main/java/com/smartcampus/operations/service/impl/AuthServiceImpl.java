@@ -98,7 +98,7 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse oauthLogin(OAuthLoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserAccessDeniedException(
-                        "Access Denied: You are not registered in the system"));
+                        "Access Denied: Unregistered Account"));
 
         // Check account status
         if (!user.getIsActive()) {
