@@ -6,6 +6,9 @@ import ProfileSettings from '../pages/ProfileSettings';
 import OAuth2RedirectHandler from '../pages/OAuth2RedirectHandler';
 import DashboardHome from '../pages/admin/DashboardHome';
 import UserManagement from '../pages/admin/UserManagement';
+import AdminResourceManagement from '../pages/admin/AdminResourceManagement';
+import Resources from '../pages/Resources';
+import ResourceDetail from '../pages/ResourceDetail';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RoleBasedRoute } from './RoleBasedRoute';
@@ -24,6 +27,8 @@ const AppRoutes = () => {
                 </ProtectedRoute>
             }>
                 <Route path="/settings" element={<ProfileSettings />} />
+                <Route path="/resources" element={<Resources />} />
+                <Route path="/resources/:id" element={<ResourceDetail />} />
                 
                 {/* Admin Nested Routes */}
                 <Route path="/admin/*" element={
@@ -33,6 +38,9 @@ const AppRoutes = () => {
                 }>
                     <Route index element={<DashboardHome />} />
                     <Route path="users" element={<UserManagement />} />
+                    <Route path="resources" element={<AdminResourceManagement />} />
+                    <Route path="assets" element={<AdminResourceManagement />} />
+                    <Route path="schedules" element={<AdminResourceManagement />} />
                 </Route>
 
                 <Route path="/student" element={
