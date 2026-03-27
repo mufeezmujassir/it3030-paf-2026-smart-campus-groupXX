@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import defaultImg from '../assets/default_resource.svg';
 import catalogImg from '../assets/assets_catalog.svg';
+import BookingCalendar from '../components/BookingCalendar';
 
 const typeImageMap = {
     LAB: catalogImg,
@@ -43,6 +44,11 @@ const ResourceDetail = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleBookingCreated = () => {
+        // Optional: refresh or show message
+        toast.success('Booking request submitted!');
     };
 
     /* ---------- loading skeleton ---------- */
@@ -214,6 +220,14 @@ const ResourceDetail = () => {
                             <ArrowLeft size={18} />
                             Browse Catalogue
                         </Link>
+                    </div>
+                    {/* NEW: Booking Calendar Section */}
+                    <div className="mt-12">
+                        <BookingCalendar
+                            resourceId={resource.id}
+                            resourceName={resource.name}
+                            onBookingCreated={handleBookingCreated}
+                        />
                     </div>
                 </div>
             </div>

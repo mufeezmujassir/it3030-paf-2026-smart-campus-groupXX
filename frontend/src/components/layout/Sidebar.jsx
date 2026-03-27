@@ -15,6 +15,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
             { icon: <Users size={20} />, label: 'User Directory', path: '/admin/users' },
             { icon: <Building size={20} />, label: 'Assets & Labs', path: '/admin/assets' },
             { icon: <Calendar size={20} />, label: 'Schedules', path: '/admin/schedules' },
+            { icon: <Calendar size={20} />, label: 'Bookings', path: '/admin/bookings' },
             { icon: <Ticket size={20} />, label: 'Support Tickets', path: '/admin/tickets' },
         ],
         STUDENT: [

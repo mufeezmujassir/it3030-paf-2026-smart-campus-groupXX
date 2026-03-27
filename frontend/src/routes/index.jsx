@@ -12,6 +12,7 @@ import ResourceDetail from '../pages/ResourceDetail';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RoleBasedRoute } from './RoleBasedRoute';
+import AdminBookingManagement from '../pages/admin/AdminBookingManagement';
 
 const AppRoutes = () => {
     return (
@@ -41,6 +42,7 @@ const AppRoutes = () => {
                     <Route path="resources" element={<AdminResourceManagement />} />
                     <Route path="assets" element={<AdminResourceManagement />} />
                     <Route path="schedules" element={<AdminResourceManagement />} />
+                    <Route path="bookings" element={<AdminBookingManagement />} />
                 </Route>
 
                 <Route path="/student" element={
