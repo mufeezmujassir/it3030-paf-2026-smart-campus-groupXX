@@ -89,6 +89,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     Optional<Booking> findByIdAndUserId(UUID id, UUID userId);
 
+    // Get all bookings by status
+    List<Booking> findByStatus(BookingStatus status);
+
     // Check if a booking exists with specific status
     boolean existsByResourceIdAndBookingDateAndStartTimeAndEndTimeAndStatus(
             UUID resourceId, LocalDate bookingDate, LocalTime startTime, LocalTime endTime, BookingStatus status);
