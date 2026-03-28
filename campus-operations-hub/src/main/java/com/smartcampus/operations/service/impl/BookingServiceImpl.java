@@ -148,12 +148,21 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
 
-        // Validate status transition
+        // Validate status transition based on assignment guidelines
         if (booking.getStatus() == BookingStatus.APPROVED && request.getStatus() == BookingStatus.REJECTED) {
-            throw new InvalidBookingException("Cannot reject an already approved booking");
+            throw new InvalidBookingException("Cannot reject an already approved booking. Approved bookings can only be cancelled by the user.");
         }
+
+        if (booking.getStatus() == BookingStatus.APPROVED && request.getStatus() == BookingStatus.CANCELLED) {
+            throw new InvalidBookingException("Only users can cancel their own approved bookings. Admins cannot cancel approved bookings.");
+        }
+
         if (booking.getStatus() == BookingStatus.REJECTED || booking.getStatus() == BookingStatus.CANCELLED) {
             throw new InvalidBookingException("Cannot modify a finalised booking");
+        }
+
+        if (booking.getStatus() == BookingStatus.APPROVED && request.getStatus() == BookingStatus.APPROVED) {
+            throw new InvalidBookingException("Booking is already approved");
         }
 
         // If approving, check for conflicts again and reject other pending bookings
@@ -257,26 +266,50 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findByIdAndUserId(bookingId, user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found or not owned by user"));
 
-        if (booking.getStatus() == BookingStatus.APPROVED || booking.getStatus() == BookingStatus.PENDING) {
+        // Users can cancel PENDING or APPROVED bookings
+        if (booking.getStatus() == BookingStatus.PENDING) {
             booking.setStatus(BookingStatus.CANCELLED);
+            booking.setAdminReason("Cancelled by user");
             Booking updated = bookingRepository.save(booking);
 
             Resource resource = resourceRepository.findById(booking.getResourceId())
                     .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
 
-            log.info("Booking {} cancelled by user {}", bookingId, userEmail);
+            log.info("Pending booking {} cancelled by user {}", bookingId, userEmail);
 
             notificationService.sendNotification(
                     user.getId(),
                     "Booking Cancelled",
-                    String.format("Your booking for %s on %s at %s-%s has been cancelled.",
+                    String.format("Your pending booking request for %s on %s at %s-%s has been cancelled.",
                             resource.getName(), booking.getBookingDate(),
                             booking.getStartTime(), booking.getEndTime()),
                     "BOOKING_CANCELLED"
             );
 
             return mapToResponse(updated, resource, user);
-        } else {
+        }
+        else if (booking.getStatus() == BookingStatus.APPROVED) {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setAdminReason("Cancelled by user");
+            Booking updated = bookingRepository.save(booking);
+
+            Resource resource = resourceRepository.findById(booking.getResourceId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
+
+            log.info("Approved booking {} cancelled by user {}", bookingId, userEmail);
+
+            notificationService.sendNotification(
+                    user.getId(),
+                    "Booking Cancelled",
+                    String.format("Your approved booking for %s on %s at %s-%s has been cancelled.",
+                            resource.getName(), booking.getBookingDate(),
+                            booking.getStartTime(), booking.getEndTime()),
+                    "BOOKING_CANCELLED"
+            );
+
+            return mapToResponse(updated, resource, user);
+        }
+        else {
             throw new InvalidBookingException("Only pending or approved bookings can be cancelled");
         }
     }
