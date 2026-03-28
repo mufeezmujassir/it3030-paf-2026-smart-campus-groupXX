@@ -12,7 +12,7 @@ const AdminBookingManagement = () => {
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [calendarLoading, setCalendarLoading] = useState(false);
     const [timeSlots, setTimeSlots] = useState([]);
-    const [stats, setStats] = useState({ totalRequests: 0, approved: 0, pending: 0, rejected: 0 });
+    const [stats, setStats] = useState({ totalRequests: 0, approved: 0, pending: 0, rejected: 0, cancelled: 0 });
 
     const [filters, setFilters] = useState({
         status: ''
@@ -88,7 +88,8 @@ const AdminBookingManagement = () => {
         const approved = bookingsData.filter(b => b.status === 'APPROVED').length;
         const pending = bookingsData.filter(b => b.status === 'PENDING').length;
         const rejected = bookingsData.filter(b => b.status === 'REJECTED').length;
-        setStats({ totalRequests: total, approved, pending, rejected });
+        const cancelled = bookingsData.filter(b => b.status === 'CANCELLED').length;
+        setStats({ totalRequests: total, approved, pending, rejected, cancelled });
     };
 
     const generateTimeSlots = (bookingsData) => {
@@ -107,6 +108,7 @@ const AdminBookingManagement = () => {
             const approvedCount = slotBookings.filter(b => b.status === 'APPROVED').length;
             const pendingCount = slotBookings.filter(b => b.status === 'PENDING').length;
             const rejectedCount = slotBookings.filter(b => b.status === 'REJECTED').length;
+            const cancelledCount = slotBookings.filter(b => b.status === 'CANCELLED').length;
             const totalCount = slotBookings.length;
 
             let slotStatus = 'available';
@@ -124,6 +126,7 @@ const AdminBookingManagement = () => {
                 approvedCount,
                 pendingCount,
                 rejectedCount,
+                cancelledCount,
                 totalCount,
                 status: slotStatus
             });
@@ -173,6 +176,7 @@ const AdminBookingManagement = () => {
 
     const handleFilterChange = (value) => {
         setFilters({ status: value });
+        setShowFilters(false);
     };
 
     const clearFilters = () => {
@@ -185,7 +189,7 @@ const AdminBookingManagement = () => {
             PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
             APPROVED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
             REJECTED: 'bg-rose-50 text-rose-700 border-rose-200',
-            CANCELLED: 'bg-gray-50 text-gray-600 border-gray-200'
+            CANCELLED: 'bg-gray-100 text-gray-600 border-gray-200'
         };
         return styles[status] || styles.PENDING;
     };
@@ -194,6 +198,7 @@ const AdminBookingManagement = () => {
         switch (status) {
             case 'APPROVED': return <CheckCircle className="w-3 h-3" />;
             case 'REJECTED': return <XCircle className="w-3 h-3" />;
+            case 'CANCELLED': return <XCircle className="w-3 h-3" />;
             default: return <Clock className="w-3 h-3" />;
         }
     };
@@ -229,6 +234,16 @@ const AdminBookingManagement = () => {
         return icons[type] || '🏢';
     };
 
+    const getActiveFilterName = () => {
+        switch(filters.status) {
+            case 'PENDING': return 'Pending';
+            case 'APPROVED': return 'Approved';
+            case 'REJECTED': return 'Rejected';
+            case 'CANCELLED': return 'Cancelled';
+            default: return null;
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
             <div className="max-w-7xl mx-auto p-6 space-y-6">
@@ -254,7 +269,7 @@ const AdminBookingManagement = () => {
 
                                 {/* Quick Stats */}
                                 {selectedResource && stats.totalRequests > 0 && (
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 flex-wrap">
                                         <div className="px-3 py-1.5 bg-emerald-50 rounded-full">
                                             <span className="text-xs font-semibold text-emerald-600">✓ {stats.approved} Approved</span>
                                         </div>
@@ -263,6 +278,9 @@ const AdminBookingManagement = () => {
                                         </div>
                                         <div className="px-3 py-1.5 bg-rose-50 rounded-full">
                                             <span className="text-xs font-semibold text-rose-600">✗ {stats.rejected} Rejected</span>
+                                        </div>
+                                        <div className="px-3 py-1.5 bg-gray-100 rounded-full">
+                                            <span className="text-xs font-semibold text-gray-600">✗ {stats.cancelled} Cancelled</span>
                                         </div>
                                     </div>
                                 )}
@@ -322,7 +340,7 @@ const AdminBookingManagement = () => {
                             {showFilters && (
                                 <div className="mt-4 p-4 bg-white rounded-xl border border-gray-100 animate-in slide-in-from-top-2 duration-200">
                                     <div className="flex items-center justify-between mb-3">
-                                        <h4 className="text-sm font-semibold text-text-primary">Filter Bookings</h4>
+                                        <h4 className="text-sm font-semibold text-text-primary">Filter by Status</h4>
                                         {filters.status && (
                                             <button
                                                 onClick={clearFilters}
@@ -373,7 +391,34 @@ const AdminBookingManagement = () => {
                                         >
                                             ✗ Rejected
                                         </button>
+                                        <button
+                                            onClick={() => handleFilterChange('CANCELLED')}
+                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                                filters.status === 'CANCELLED'
+                                                    ? 'bg-gray-500 text-white shadow-sm'
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`}
+                                        >
+                                            ✗ Cancelled
+                                        </button>
                                     </div>
+                                </div>
+                            )}
+
+                            {/* Active Filter Badge */}
+                            {filters.status && (
+                                <div className="mt-3 flex items-center gap-2">
+                                    <div className="px-3 py-1.5 bg-primary/10 rounded-full">
+                                        <span className="text-xs font-medium text-primary">
+                                            Showing: {getActiveFilterName()} bookings
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={clearFilters}
+                                        className="text-xs text-gray-400 hover:text-gray-600 transition"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -382,7 +427,7 @@ const AdminBookingManagement = () => {
 
                 {/* Stats Cards - Only show when resource selected */}
                 {selectedResource && stats.totalRequests > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                         <StatCard
                             icon={<TrendingUp className="w-5 h-5 text-primary" />}
                             title="Total Requests"
@@ -406,6 +451,12 @@ const AdminBookingManagement = () => {
                             title="Rejected"
                             value={stats.rejected}
                             color="rose"
+                        />
+                        <StatCard
+                            icon={<XCircle className="w-5 h-5 text-gray-500" />}
+                            title="Cancelled"
+                            value={stats.cancelled}
+                            color="gray"
                         />
                     </div>
                 )}
@@ -464,11 +515,15 @@ const AdminBookingManagement = () => {
                                     <div className="w-3 h-3 bg-rose-100 border border-rose-200 rounded"></div>
                                     <span className="text-xs text-text-secondary">Approved Bookings</span>
                                 </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded"></div>
+                                    <span className="text-xs text-text-secondary">Cancelled</span>
+                                </div>
                                 {filters.status && filters.status !== '' && (
                                     <div className="ml-auto">
                                         <div className="px-3 py-1 bg-primary/10 rounded-full">
                                             <span className="text-xs text-primary font-medium">
-                                                Filtered: {filters.status}
+                                                Filtered: {getActiveFilterName()}
                                             </span>
                                         </div>
                                     </div>
@@ -519,7 +574,7 @@ const AdminBookingManagement = () => {
                                                 </div>
 
                                                 {slot.totalCount > 0 && (
-                                                    <div className="flex gap-2">
+                                                    <div className="flex gap-2 flex-wrap">
                                                         {slot.approvedCount > 0 && (
                                                             <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg text-xs font-medium text-emerald-600">
                                                                 <CheckCircle className="w-3 h-3" />
@@ -536,6 +591,12 @@ const AdminBookingManagement = () => {
                                                             <span className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 rounded-lg text-xs font-medium text-rose-600">
                                                                 <XCircle className="w-3 h-3" />
                                                                 {slot.rejectedCount}
+                                                            </span>
+                                                        )}
+                                                        {slot.cancelledCount > 0 && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-600">
+                                                                <XCircle className="w-3 h-3" />
+                                                                {slot.cancelledCount}
                                                             </span>
                                                         )}
                                                     </div>
@@ -589,34 +650,32 @@ const AdminBookingManagement = () => {
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Action Buttons */}
+                                                                {/* Action Buttons - Only for PENDING bookings */}
                                                                 <div className="flex items-center gap-2 md:border-l md:border-gray-100 md:pl-4">
-                                                                    <button
-                                                                        onClick={() => openActionModal(booking, 'APPROVED')}
-                                                                        disabled={booking.status !== 'PENDING'}
-                                                                        className={`
-                                                                            p-2.5 rounded-xl transition-all duration-200
-                                                                            ${booking.status === 'PENDING'
-                                                                            ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105'
-                                                                            : 'bg-gray-50 text-gray-300 cursor-not-allowed'}
-                                                                        `}
-                                                                        title="Approve Booking"
-                                                                    >
-                                                                        <CheckCircle className="w-5 h-5" />
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => openActionModal(booking, 'REJECTED')}
-                                                                        disabled={booking.status !== 'PENDING'}
-                                                                        className={`
-                                                                            p-2.5 rounded-xl transition-all duration-200
-                                                                            ${booking.status === 'PENDING'
-                                                                            ? 'bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105'
-                                                                            : 'bg-gray-50 text-gray-300 cursor-not-allowed'}
-                                                                        `}
-                                                                        title="Reject Booking"
-                                                                    >
-                                                                        <XCircle className="w-5 h-5" />
-                                                                    </button>
+                                                                    {booking.status === 'PENDING' ? (
+                                                                        <>
+                                                                            <button
+                                                                                onClick={() => openActionModal(booking, 'APPROVED')}
+                                                                                className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105 transition-all duration-200"
+                                                                                title="Approve Booking"
+                                                                            >
+                                                                                <CheckCircle className="w-5 h-5" />
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => openActionModal(booking, 'REJECTED')}
+                                                                                className="p-2.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105 transition-all duration-200"
+                                                                                title="Reject Booking"
+                                                                            >
+                                                                                <XCircle className="w-5 h-5" />
+                                                                            </button>
+                                                                        </>
+                                                                    ) : (
+                                                                        <div className="text-xs text-gray-400 px-2">
+                                                                            {booking.status === 'APPROVED' ? 'Approved' :
+                                                                                booking.status === 'REJECTED' ? 'Rejected' :
+                                                                                    booking.status === 'CANCELLED' ? 'Cancelled' : 'Completed'}
+                                                                        </div>
+                                                                    )}
                                                                     <button
                                                                         onClick={() => {
                                                                             setSelectedBooking(booking);

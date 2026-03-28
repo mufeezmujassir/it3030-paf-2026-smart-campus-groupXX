@@ -1,6 +1,6 @@
 // src/pages/MyBookings.jsx
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Mail, CheckCircle, XCircle, Eye, Building, Edit2, Trash2, AlertCircle, Loader2, Users, ChevronRight, Filter, X, Save, RefreshCw } from 'lucide-react';
+import { Calendar, Clock, User, Mail, CheckCircle, XCircle, Eye, Building, Edit2, Trash2, AlertCircle, Loader2, Users, Filter, X, Save } from 'lucide-react';
 import bookingService from '../services/bookingService';
 import resourceService from '../services/resourceService';
 import { toast } from 'react-toastify';
@@ -13,11 +13,10 @@ const MyBookings = () => {
     const [editingBooking, setEditingBooking] = useState(null);
     const [showEditModal, setShowEditModal] = useState(false);
     const [showCancelConfirm, setShowCancelConfirm] = useState(null);
-    const [filters, setFilters] = useState({ status: '' });
+    const [selectedStatus, setSelectedStatus] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [processing, setProcessing] = useState(false);
 
-    // Edit form state
     const [editForm, setEditForm] = useState({
         purpose: '',
         expectedAttendees: ''
@@ -25,12 +24,11 @@ const MyBookings = () => {
 
     useEffect(() => {
         fetchResources();
-        fetchMyBookings();
     }, []);
 
     useEffect(() => {
         fetchMyBookings();
-    }, [filters]);
+    }, [selectedStatus]);
 
     const fetchResources = async () => {
         try {
@@ -45,13 +43,14 @@ const MyBookings = () => {
         setLoading(true);
         try {
             const params = {};
-            if (filters.status && filters.status !== '') {
-                params.status = filters.status;
+            if (selectedStatus && selectedStatus !== '') {
+                params.status = selectedStatus;
             }
-
+            console.log('Fetching bookings with status:', selectedStatus);
             const data = await bookingService.getMyBookings(params);
             const bookingsData = data.content || data;
             setBookings(bookingsData);
+            console.log('Fetched bookings count:', bookingsData.length);
         } catch (error) {
             console.error('Failed to load bookings:', error);
             toast.error('Failed to load your bookings');
@@ -77,7 +76,6 @@ const MyBookings = () => {
 
     const handleEditBooking = async () => {
         if (!editingBooking) return;
-
         setProcessing(true);
         try {
             await bookingService.updateBooking(editingBooking.id, {
@@ -106,6 +104,18 @@ const MyBookings = () => {
         setShowEditModal(true);
     };
 
+    const handleStatusFilter = (status) => {
+        console.log('Setting filter to:', status);
+        setSelectedStatus(status);
+        setShowFilters(false);
+    };
+
+    const clearFilter = () => {
+        console.log('Clearing filter');
+        setSelectedStatus('');
+        setShowFilters(false);
+    };
+
     const getStatusConfig = (status) => {
         const configs = {
             PENDING: {
@@ -115,8 +125,7 @@ const MyBookings = () => {
                 icon: <Clock className="w-4 h-4" />,
                 label: 'Pending',
                 canEdit: true,
-                canCancel: true,
-                description: 'Your booking is waiting for admin approval'
+                canCancel: true
             },
             APPROVED: {
                 bg: 'bg-emerald-50',
@@ -125,8 +134,7 @@ const MyBookings = () => {
                 icon: <CheckCircle className="w-4 h-4" />,
                 label: 'Approved',
                 canEdit: false,
-                canCancel: false,
-                description: 'Your booking has been approved'
+                canCancel: false
             },
             REJECTED: {
                 bg: 'bg-rose-50',
@@ -135,8 +143,7 @@ const MyBookings = () => {
                 icon: <XCircle className="w-4 h-4" />,
                 label: 'Rejected',
                 canEdit: false,
-                canCancel: false,
-                description: 'Your booking request was rejected'
+                canCancel: false
             },
             CANCELLED: {
                 bg: 'bg-gray-50',
@@ -145,8 +152,7 @@ const MyBookings = () => {
                 icon: <XCircle className="w-4 h-4" />,
                 label: 'Cancelled',
                 canEdit: false,
-                canCancel: false,
-                description: 'This booking has been cancelled'
+                canCancel: false
             }
         };
         return configs[status] || configs.PENDING;
@@ -167,25 +173,22 @@ const MyBookings = () => {
         return resources.find(r => r.id === resourceId);
     };
 
-    const StatCard = ({ icon, title, value, color }) => (
-        <div className={`bg-white rounded-xl border border-gray-100 p-4 shadow-sm`}>
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">{title}</p>
-                    <p className="text-2xl font-bold text-text-primary mt-1">{value}</p>
-                </div>
-                <div className={`w-10 h-10 rounded-xl bg-${color}-50 flex items-center justify-center`}>
-                    {icon}
-                </div>
-            </div>
-        </div>
-    );
+    const getStatusDisplayName = () => {
+        switch(selectedStatus) {
+            case 'PENDING': return 'Pending';
+            case 'APPROVED': return 'Approved';
+            case 'REJECTED': return 'Rejected';
+            case 'CANCELLED': return 'Cancelled';
+            default: return null;
+        }
+    };
 
     const stats = {
         total: bookings.length,
         pending: bookings.filter(b => b.status === 'PENDING').length,
         approved: bookings.filter(b => b.status === 'APPROVED').length,
-        rejected: bookings.filter(b => b.status === 'REJECTED').length
+        rejected: bookings.filter(b => b.status === 'REJECTED').length,
+        cancelled: bookings.filter(b => b.status === 'CANCELLED').length
     };
 
     return (
@@ -211,18 +214,18 @@ const MyBookings = () => {
                                     </div>
                                 </div>
 
-                                {/* Filter Toggle Button */}
+                                {/* Filter Button */}
                                 <button
                                     onClick={() => setShowFilters(!showFilters)}
                                     className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                                        showFilters || filters.status
+                                        showFilters || selectedStatus
                                             ? 'bg-primary text-white shadow-md shadow-primary/20'
                                             : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                     }`}
                                 >
                                     <Filter className="w-4 h-4" />
                                     <span>Filter</span>
-                                    {filters.status && (
+                                    {selectedStatus && (
                                         <span className="ml-1 w-5 h-5 bg-white/20 rounded-full text-xs flex items-center justify-center">
                                             1
                                         </span>
@@ -234,13 +237,10 @@ const MyBookings = () => {
                             {showFilters && (
                                 <div className="mt-4 p-4 bg-white rounded-xl border border-gray-100 animate-in slide-in-from-top-2 duration-200">
                                     <div className="flex items-center justify-between mb-3">
-                                        <h4 className="text-sm font-semibold text-text-primary">Filter Bookings</h4>
-                                        {filters.status && (
+                                        <h4 className="text-sm font-semibold text-text-primary">Filter by Status</h4>
+                                        {selectedStatus && (
                                             <button
-                                                onClick={() => {
-                                                    setFilters({ status: '' });
-                                                    setShowFilters(false);
-                                                }}
+                                                onClick={clearFilter}
                                                 className="text-xs text-primary hover:text-primary-hover flex items-center gap-1"
                                             >
                                                 <X className="w-3 h-3" /> Clear
@@ -249,9 +249,9 @@ const MyBookings = () => {
                                     </div>
                                     <div className="flex flex-wrap gap-3">
                                         <button
-                                            onClick={() => setFilters({ status: '' })}
+                                            onClick={() => handleStatusFilter('')}
                                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                                !filters.status
+                                                !selectedStatus
                                                     ? 'bg-primary text-white shadow-sm'
                                                     : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                                             }`}
@@ -259,36 +259,67 @@ const MyBookings = () => {
                                             All Bookings
                                         </button>
                                         <button
-                                            onClick={() => setFilters({ status: 'PENDING' })}
+                                            onClick={() => handleStatusFilter('PENDING')}
                                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                                filters.status === 'PENDING'
+                                                selectedStatus === 'PENDING'
                                                     ? 'bg-amber-500 text-white shadow-sm'
                                                     : 'bg-amber-50 text-amber-600 hover:bg-amber-100'
                                             }`}
                                         >
-                                            ⏳ Pending
+                                            <Clock className="w-4 h-4 inline mr-1" />
+                                            Pending
                                         </button>
                                         <button
-                                            onClick={() => setFilters({ status: 'APPROVED' })}
+                                            onClick={() => handleStatusFilter('APPROVED')}
                                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                                filters.status === 'APPROVED'
+                                                selectedStatus === 'APPROVED'
                                                     ? 'bg-emerald-500 text-white shadow-sm'
                                                     : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                                             }`}
                                         >
-                                            ✓ Approved
+                                            <CheckCircle className="w-4 h-4 inline mr-1" />
+                                            Approved
                                         </button>
                                         <button
-                                            onClick={() => setFilters({ status: 'REJECTED' })}
+                                            onClick={() => handleStatusFilter('REJECTED')}
                                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                                filters.status === 'REJECTED'
+                                                selectedStatus === 'REJECTED'
                                                     ? 'bg-rose-500 text-white shadow-sm'
                                                     : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
                                             }`}
                                         >
-                                            ✗ Rejected
+                                            <XCircle className="w-4 h-4 inline mr-1" />
+                                            Rejected
+                                        </button>
+                                        <button
+                                            onClick={() => handleStatusFilter('CANCELLED')}
+                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                                selectedStatus === 'CANCELLED'
+                                                    ? 'bg-gray-500 text-white shadow-sm'
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`}
+                                        >
+                                            <XCircle className="w-4 h-4 inline mr-1" />
+                                            Cancelled
                                         </button>
                                     </div>
+                                </div>
+                            )}
+
+                            {/* Active Filter Badge */}
+                            {selectedStatus && (
+                                <div className="mt-3 flex items-center gap-2">
+                                    <div className="px-3 py-1.5 bg-primary/10 rounded-full">
+                                        <span className="text-xs font-medium text-primary">
+                                            Showing: {getStatusDisplayName()} bookings
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={clearFilter}
+                                        className="text-xs text-gray-400 hover:text-gray-600 transition"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -297,31 +328,62 @@ const MyBookings = () => {
 
                 {/* Stats Cards */}
                 {bookings.length > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <StatCard
-                            icon={<Calendar className="w-5 h-5 text-primary" />}
-                            title="Total Bookings"
-                            value={stats.total}
-                            color="primary"
-                        />
-                        <StatCard
-                            icon={<Clock className="w-5 h-5 text-amber-500" />}
-                            title="Pending"
-                            value={stats.pending}
-                            color="amber"
-                        />
-                        <StatCard
-                            icon={<CheckCircle className="w-5 h-5 text-emerald-500" />}
-                            title="Approved"
-                            value={stats.approved}
-                            color="emerald"
-                        />
-                        <StatCard
-                            icon={<XCircle className="w-5 h-5 text-rose-500" />}
-                            title="Rejected/Cancelled"
-                            value={stats.rejected}
-                            color="rose"
-                        />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">Total Bookings</p>
+                                    <p className="text-2xl font-bold text-text-primary mt-1">{stats.total}</p>
+                                </div>
+                                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                    <Calendar className="w-5 h-5 text-primary" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">Pending</p>
+                                    <p className="text-2xl font-bold text-text-primary mt-1">{stats.pending}</p>
+                                </div>
+                                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                                    <Clock className="w-5 h-5 text-amber-500" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">Approved</p>
+                                    <p className="text-2xl font-bold text-text-primary mt-1">{stats.approved}</p>
+                                </div>
+                                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                                    <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">Rejected</p>
+                                    <p className="text-2xl font-bold text-text-primary mt-1">{stats.rejected}</p>
+                                </div>
+                                <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center">
+                                    <XCircle className="w-5 h-5 text-rose-500" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">Cancelled</p>
+                                    <p className="text-2xl font-bold text-text-primary mt-1">{stats.cancelled}</p>
+                                </div>
+                                <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">
+                                    <XCircle className="w-5 h-5 text-gray-500" />
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
 
@@ -339,13 +401,13 @@ const MyBookings = () => {
                             </div>
                             <h3 className="text-xl font-bold text-text-primary mb-2">No Bookings Found</h3>
                             <p className="text-text-secondary max-w-md mx-auto">
-                                {filters.status
-                                    ? `You don't have any ${filters.status.toLowerCase()} bookings. Try clearing the filter to see all bookings.`
+                                {selectedStatus
+                                    ? `You don't have any ${getStatusDisplayName()?.toLowerCase()} bookings. Try clearing the filter to see all bookings.`
                                     : "You haven't made any booking requests yet. Browse resources and book your first slot!"}
                             </p>
-                            {filters.status && (
+                            {selectedStatus && (
                                 <button
-                                    onClick={() => setFilters({ status: '' })}
+                                    onClick={clearFilter}
                                     className="mt-4 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-hover transition"
                                 >
                                     Clear Filters
@@ -363,7 +425,6 @@ const MyBookings = () => {
                                 return (
                                     <div key={booking.id} className="p-6 hover:bg-gray-50/30 transition-colors">
                                         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                                            {/* Left Section - Resource Info */}
                                             <div className="flex-1">
                                                 <div className="flex items-start gap-4">
                                                     <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -386,7 +447,6 @@ const MyBookings = () => {
                                                             </p>
                                                         )}
 
-                                                        {/* Date and Time */}
                                                         <div className="flex flex-wrap gap-4 mb-3">
                                                             <div className="flex items-center gap-2">
                                                                 <Calendar className="w-4 h-4 text-text-secondary" />
@@ -410,27 +470,36 @@ const MyBookings = () => {
                                                             )}
                                                         </div>
 
-                                                        {/* Purpose */}
                                                         {booking.purpose && (
                                                             <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
-                                                                <p className="text-sm text-text-primary">
-                                                                    📝 {booking.purpose}
-                                                                </p>
+                                                                <p className="text-sm text-text-primary">📝 {booking.purpose}</p>
                                                             </div>
                                                         )}
 
-                                                        {/* Admin Reason (if rejected) */}
-                                                        {booking.adminReason && booking.status === 'REJECTED' && (
-                                                            <div className="mt-3 flex items-start gap-2 p-3 bg-rose-50 rounded-lg border border-rose-100">
-                                                                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                                                        {booking.adminReason && (booking.status === 'REJECTED' || booking.status === 'CANCELLED') && (
+                                                            <div className={`mt-3 flex items-start gap-2 p-3 rounded-lg border ${
+                                                                booking.status === 'REJECTED'
+                                                                    ? 'bg-rose-50 border-rose-100'
+                                                                    : 'bg-gray-50 border-gray-200'
+                                                            }`}>
+                                                                <AlertCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                                                                    booking.status === 'REJECTED' ? 'text-rose-600' : 'text-gray-500'
+                                                                }`} />
                                                                 <div>
-                                                                    <p className="text-xs font-semibold text-rose-700">Reason for rejection:</p>
-                                                                    <p className="text-sm text-rose-600">{booking.adminReason}</p>
+                                                                    <p className={`text-xs font-semibold ${
+                                                                        booking.status === 'REJECTED' ? 'text-rose-700' : 'text-gray-600'
+                                                                    }`}>
+                                                                        {booking.status === 'REJECTED' ? 'Reason for rejection:' : 'Reason for cancellation:'}
+                                                                    </p>
+                                                                    <p className={`text-sm ${
+                                                                        booking.status === 'REJECTED' ? 'text-rose-600' : 'text-gray-500'
+                                                                    }`}>
+                                                                        {booking.adminReason}
+                                                                    </p>
                                                                 </div>
                                                             </div>
                                                         )}
 
-                                                        {/* Request Info */}
                                                         <p className="text-xs text-text-secondary mt-3">
                                                             Requested on {format(new Date(booking.createdAt), 'MMM d, yyyy h:mm a')}
                                                         </p>
@@ -438,7 +507,6 @@ const MyBookings = () => {
                                                 </div>
                                             </div>
 
-                                            {/* Right Section - Actions */}
                                             <div className="flex flex-row lg:flex-col gap-2 lg:items-end">
                                                 {canEdit && (
                                                     <button

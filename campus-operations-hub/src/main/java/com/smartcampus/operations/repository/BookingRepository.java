@@ -39,8 +39,11 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("resourceId") UUID resourceId,
             @Param("bookingDate") LocalDate bookingDate);
 
-    // Get user's bookings
+    // Get user's bookings (all)
     Page<Booking> findByUserIdOrderByBookingDateDescStartTimeDesc(UUID userId, Pageable pageable);
+
+    // Get user's bookings filtered by status
+    Page<Booking> findByUserIdAndStatusOrderByBookingDateDescStartTimeDesc(UUID userId, BookingStatus status, Pageable pageable);
 
     // Check if user has a specific booking
     @Query("SELECT b FROM Booking b WHERE b.userId = :userId " +

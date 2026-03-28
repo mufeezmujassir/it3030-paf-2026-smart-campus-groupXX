@@ -7,8 +7,11 @@ export const bookingService = {
     // Create a booking
     createBooking: (data) => api.post(BOOKING_BASE, data).then(res => res.data),
 
-    // Get user's own bookings
-    getMyBookings: (params) => api.get(`${BOOKING_BASE}/my`, { params }).then(res => res.data),
+    // Get user's own bookings with optional status filter
+    getMyBookings: (params) => {
+        console.log('getMyBookings called with params:', params);
+        return api.get(`${BOOKING_BASE}/my`, { params }).then(res => res.data);
+    },
 
     // Get booking by ID
     getBookingById: (id) => api.get(`${BOOKING_BASE}/${id}`).then(res => res.data),

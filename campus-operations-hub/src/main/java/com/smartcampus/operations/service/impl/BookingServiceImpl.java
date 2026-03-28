@@ -283,16 +283,40 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<BookingResponse> getUserBookings(String userEmail, Pageable pageable) {
+    public Page<BookingResponse> getUserBookings(String userEmail, String status, Pageable pageable) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        return bookingRepository.findByUserIdOrderByBookingDateDescStartTimeDesc(user.getId(), pageable)
-                .map(booking -> {
-                    Resource resource = resourceRepository.findById(booking.getResourceId())
-                            .orElse(null);
-                    return mapToResponse(booking, resource, user);
-                });
+        log.info("Fetching user bookings for email: {}, status: {}, pageable: {}", userEmail, status, pageable);
+
+        // Convert status to enum
+        BookingStatus bookingStatus = null;
+        if (status != null && !status.trim().isEmpty()) {
+            try {
+                bookingStatus = BookingStatus.valueOf(status.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid status value: {}", status);
+            }
+        }
+
+        Page<Booking> bookingPage;
+        if (bookingStatus != null) {
+            // Filter by status
+            bookingPage = bookingRepository.findByUserIdAndStatusOrderByBookingDateDescStartTimeDesc(
+                    user.getId(), bookingStatus, pageable);
+            log.info("Filtering by status: {}", bookingStatus);
+        } else {
+            // No status filter - get all bookings
+            bookingPage = bookingRepository.findByUserIdOrderByBookingDateDescStartTimeDesc(user.getId(), pageable);
+            log.info("No status filter - getting all bookings");
+        }
+
+        log.info("Found {} bookings", bookingPage.getTotalElements());
+
+        return bookingPage.map(booking -> {
+            Resource resource = resourceRepository.findById(booking.getResourceId()).orElse(null);
+            return mapToResponse(booking, resource, user);
+        });
     }
 
     @Override

@@ -39,8 +39,10 @@ public class BookingController {
     @GetMapping("/my")
     public ResponseEntity<Page<BookingResponse>> getMyBookings(
             @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam(required = false) String status,
             @PageableDefault(size = 20, sort = "bookingDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(bookingService.getUserBookings(userDetails.getUsername(), pageable));
+        System.out.println("Fetching user bookings with status: " + status);
+        return ResponseEntity.ok(bookingService.getUserBookings(userDetails.getUsername(), status, pageable));
     }
 
     @GetMapping("/{id}")
@@ -73,7 +75,7 @@ public class BookingController {
         return ResponseEntity.ok(bookingService.checkConflict(resourceId, date, startTime, endTime));
     }
 
-    // Admin endpoints - FIXED filtering
+    // Admin endpoints
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Page<BookingResponse>> getAllBookings(
@@ -82,14 +84,11 @@ public class BookingController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate bookingDate,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
-        // Log the received filters for debugging
         System.out.println("Admin Booking Filters - ResourceId: " + resourceId +
                 ", Status: " + status +
                 ", BookingDate: " + bookingDate);
 
         Page<BookingResponse> result = bookingService.getAllBookings(resourceId, status, bookingDate, pageable);
-
-        // Log the result count
         System.out.println("Total bookings found: " + result.getTotalElements());
 
         return ResponseEntity.ok(result);
