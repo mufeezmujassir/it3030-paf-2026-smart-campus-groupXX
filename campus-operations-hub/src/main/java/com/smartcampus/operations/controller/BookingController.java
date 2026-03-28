@@ -103,4 +103,13 @@ public class BookingController {
             @AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.ok(bookingService.updateBookingStatus(id, request, userDetails.getUsername()));
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<BookingResponse> updateBooking(
+            @PathVariable UUID id,
+            @Valid @RequestBody BookingUpdateRequest request,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        BookingResponse response = bookingService.updateBooking(id, request, userDetails.getUsername());
+        return ResponseEntity.ok(response);
+    }
 }

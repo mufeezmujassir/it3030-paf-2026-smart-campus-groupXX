@@ -474,6 +474,44 @@ public class BookingServiceImpl implements BookingService {
         return mapToResponse(booking, resource, user);
     }
 
+    @Override
+    @Transactional
+    public BookingResponse updateBooking(UUID bookingId, BookingUpdateRequest request, String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Booking booking = bookingRepository.findByIdAndUserId(bookingId, user.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found or not owned by user"));
+
+        // Only allow editing of PENDING bookings
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new InvalidBookingException("Only pending bookings can be edited");
+        }
+
+        // Update the booking details
+        booking.setPurpose(request.getPurpose());
+        booking.setExpectedAttendees(request.getExpectedAttendees());
+
+        Booking updated = bookingRepository.save(booking);
+
+        Resource resource = resourceRepository.findById(booking.getResourceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
+
+        log.info("Booking {} updated by user {}", bookingId, userEmail);
+
+        // Send notification about update
+        notificationService.sendNotification(
+                user.getId(),
+                "Booking Updated",
+                String.format("Your booking for %s on %s at %s-%s has been updated and is pending approval.",
+                        resource.getName(), booking.getBookingDate(),
+                        booking.getStartTime(), booking.getEndTime()),
+                "BOOKING_UPDATED"
+        );
+
+        return mapToResponse(updated, resource, user);
+    }
+
     private void validateBookingTime(LocalTime startTime, LocalTime endTime) {
         // Check if time is within allowed hours (8 AM - 5 PM)
         if (startTime.isBefore(START_TIME) || endTime.isAfter(END_TIME)) {

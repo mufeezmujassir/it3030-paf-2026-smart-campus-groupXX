@@ -16,6 +16,9 @@ export const bookingService = {
     // Cancel a booking
     cancelBooking: (id) => api.delete(`${BOOKING_BASE}/${id}/cancel`).then(res => res.data),
 
+    // Update a booking (for pending bookings only)
+    updateBooking: (id, data) => api.put(`${BOOKING_BASE}/${id}`, data).then(res => res.data),
+
     // Get available time slots for a resource on a date
     getAvailableTimeSlots: (resourceId, date) =>
         api.get(`${BOOKING_BASE}/available-slots`, { params: { resourceId, date } }).then(res => res.data),

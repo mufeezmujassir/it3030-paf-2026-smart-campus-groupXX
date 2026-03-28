@@ -1,3 +1,4 @@
+// src/routes/index.jsx
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Login from '../pages/Login';
 import OTPVerification from '../pages/OTPVerification';
@@ -13,6 +14,7 @@ import DashboardLayout from '../components/layout/DashboardLayout';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RoleBasedRoute } from './RoleBasedRoute';
 import AdminBookingManagement from '../pages/admin/AdminBookingManagement';
+import MyBookings from '../pages/MyBookings';  // Add this import
 
 const AppRoutes = () => {
     return (
@@ -20,7 +22,7 @@ const AppRoutes = () => {
             <Route path="/login" element={<Login />} />
             <Route path="/otp" element={<OTPVerification />} />
             <Route path="/oauth2/redirect" element={<OAuth2RedirectHandler />} />
-            
+
             {/* Protected Routes Wrapper */}
             <Route element={
                 <ProtectedRoute>
@@ -30,7 +32,7 @@ const AppRoutes = () => {
                 <Route path="/settings" element={<ProfileSettings />} />
                 <Route path="/resources" element={<Resources />} />
                 <Route path="/resources/:id" element={<ResourceDetail />} />
-                
+
                 {/* Admin Nested Routes */}
                 <Route path="/admin/*" element={
                     <RoleBasedRoute allowedRoles={['ADMIN']}>
@@ -45,21 +47,44 @@ const AppRoutes = () => {
                     <Route path="bookings" element={<AdminBookingManagement />} />
                 </Route>
 
+                {/* Student Routes */}
                 <Route path="/student" element={
                     <RoleBasedRoute allowedRoles={['STUDENT']}>
-                        <div className="p-8">Student Dashboard</div>
+                        <Outlet />
                     </RoleBasedRoute>
-                } />
+                }>
+                    <Route index element={<div className="p-8">Student Dashboard</div>} />
+                    <Route path="my-bookings" element={<MyBookings />} />
+                    <Route path="courses" element={<div className="p-8">My Courses</div>} />
+                    <Route path="grades" element={<div className="p-8">Grades</div>} />
+                    <Route path="tickets" element={<div className="p-8">Help Desk</div>} />
+                </Route>
+
+                {/* Staff Routes */}
                 <Route path="/staff" element={
                     <RoleBasedRoute allowedRoles={['STAFF']}>
-                        <div className="p-8">Staff Dashboard</div>
+                        <Outlet />
                     </RoleBasedRoute>
-                } />
+                }>
+                    <Route index element={<div className="p-8">Staff Dashboard</div>} />
+                    <Route path="my-bookings" element={<MyBookings />} />
+                    <Route path="manage" element={<div className="p-8">Management</div>} />
+                    <Route path="department" element={<div className="p-8">My Department</div>} />
+                    <Route path="tickets" element={<div className="p-8">Service Requests</div>} />
+                </Route>
+
+                {/* Technician Routes */}
                 <Route path="/technician" element={
                     <RoleBasedRoute allowedRoles={['TECHNICIAN']}>
-                        <div className="p-8">Technician Dashboard</div>
+                        <Outlet />
                     </RoleBasedRoute>
-                } />
+                }>
+                    <Route index element={<div className="p-8">Technician Dashboard</div>} />
+                    <Route path="my-bookings" element={<MyBookings />} />
+                    <Route path="maintenance" element={<div className="p-8">Maintenance</div>} />
+                    <Route path="safety" element={<div className="p-8">Safety Logs</div>} />
+                    <Route path="environment" element={<div className="p-8">Environment</div>} />
+                </Route>
             </Route>
 
             <Route path="/" element={<Navigate to="/login" replace />} />

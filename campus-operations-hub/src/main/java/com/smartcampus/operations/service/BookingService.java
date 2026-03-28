@@ -26,4 +26,6 @@ public interface BookingService {
     boolean checkConflict(UUID resourceId, LocalDate date, LocalTime startTime, LocalTime endTime);
 
     BookingResponse getBookingById(UUID bookingId, String userEmail);
+
+    BookingResponse updateBooking(UUID bookingId, BookingUpdateRequest request, String userEmail);
 }
