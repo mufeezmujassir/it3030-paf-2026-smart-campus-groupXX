@@ -1,7 +1,6 @@
 // src/main/java/com/smartcampus/operations/dto/BookingCreateRequest.java
 package com.smartcampus.operations.dto;
 
-import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,7 +21,6 @@ public class BookingCreateRequest {
     private UUID resourceId;
 
     @NotNull(message = "Booking date is required")
-    @Future(message = "Booking date must be in the future")
     private LocalDate bookingDate;
 
     @NotNull(message = "Start time is required")

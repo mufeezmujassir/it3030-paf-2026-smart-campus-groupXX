@@ -51,17 +51,46 @@ public class BookingServiceImpl implements BookingService {
 
         // Check if resource is active
         if (resource.getStatus() != ResourceStatus.ACTIVE) {
-            throw new InvalidBookingException("Resource is not available for booking");
+            throw new InvalidBookingException("Resource is currently unavailable for booking");
         }
 
         // Validate booking time
         validateBookingTime(request.getStartTime(), request.getEndTime());
 
-        // Check for conflicts (only with APPROVED bookings)
-        if (checkConflict(request.getResourceId(), request.getBookingDate(),
-                request.getStartTime(), request.getEndTime())) {
-            throw new InvalidBookingException("This time slot is already booked");
+        // Validate booking date and time (can't book past dates or past times on current date)
+        validateBookingDateTime(request.getBookingDate(), request.getStartTime());
+
+        // Check for conflicts - ONLY with APPROVED bookings
+        // Pending bookings do NOT block new bookings from other users
+        List<Booking> overlappingApproved = bookingRepository.findOverlappingApprovedBookings(
+                request.getResourceId(), request.getBookingDate(),
+                request.getStartTime(), request.getEndTime());
+
+        if (!overlappingApproved.isEmpty()) {
+            throw new InvalidBookingException("This time slot is already approved for another booking");
         }
+
+        // Check if the SAME user already has a pending OR approved booking for this exact slot
+        List<Booking> existingUserBookings = bookingRepository.findByUserIdAndResourceIdAndBookingDateAndStartTimeAndEndTime(
+                user.getId(), request.getResourceId(), request.getBookingDate(),
+                request.getStartTime(), request.getEndTime());
+
+        boolean hasUserPending = existingUserBookings.stream()
+                .anyMatch(b -> b.getStatus() == BookingStatus.PENDING);
+
+        if (hasUserPending) {
+            throw new InvalidBookingException("You already have a pending booking for this time slot");
+        }
+
+        boolean hasUserApproved = existingUserBookings.stream()
+                .anyMatch(b -> b.getStatus() == BookingStatus.APPROVED);
+
+        if (hasUserApproved) {
+            throw new InvalidBookingException("You already have an approved booking for this time slot");
+        }
+
+        // DIFFERENT USERS CAN BOOK THE SAME PENDING SLOT
+        // No check for other users' pending bookings - this allows multiple users to request the same slot
 
         // Create booking
         Booking booking = Booking.builder()
@@ -75,17 +104,38 @@ public class BookingServiceImpl implements BookingService {
                 .status(BookingStatus.PENDING)
                 .build();
 
-        Booking saved = bookingRepository.save(booking);
+        // Try to save - if there's a duplicate key error, catch it and handle gracefully
+        Booking saved;
+        try {
+            saved = bookingRepository.save(booking);
+        } catch (Exception e) {
+            log.error("Failed to save booking: {}", e.getMessage());
+            if (e.getMessage().contains("duplicate key") || e.getMessage().contains("unique")) {
+                throw new InvalidBookingException("This time slot is already booked. Please choose a different time.");
+            }
+            throw new InvalidBookingException("Failed to create booking: " + e.getMessage());
+        }
+
         log.info("Booking created: {} for resource {} by user {}",
                 saved.getId(), resource.getName(), user.getEmail());
+
+        // Get count of pending bookings for this slot (including this new one)
+        long pendingCount = bookingRepository.countPendingBookingsForSlot(
+                request.getResourceId(),
+                request.getBookingDate(),
+                request.getStartTime(),
+                request.getEndTime());
+
+        log.info("Now there are {} pending requests for slot {} on {}",
+                pendingCount, request.getStartTime(), request.getBookingDate());
 
         // Send notification to user
         notificationService.sendNotification(
                 user.getId(),
                 "Booking Request Submitted",
-                String.format("Your booking request for %s on %s at %s-%s has been submitted and is pending approval.",
+                String.format("Your booking request for %s on %s at %s-%s has been submitted and is pending approval. There are currently %d pending request(s) for this slot.",
                         resource.getName(), request.getBookingDate(),
-                        request.getStartTime(), request.getEndTime()),
+                        request.getStartTime(), request.getEndTime(), pendingCount),
                 "BOOKING_CREATED"
         );
 
@@ -106,12 +156,20 @@ public class BookingServiceImpl implements BookingService {
             throw new InvalidBookingException("Cannot modify a finalised booking");
         }
 
-        // If approving, check for conflicts again
+        // If approving, check for conflicts again and reject other pending bookings
         if (request.getStatus() == BookingStatus.APPROVED) {
-            if (checkConflict(booking.getResourceId(), booking.getBookingDate(),
-                    booking.getStartTime(), booking.getEndTime())) {
+            List<Booking> overlappingApproved = bookingRepository.findOverlappingApprovedBookings(
+                    booking.getResourceId(),
+                    booking.getBookingDate(),
+                    booking.getStartTime(),
+                    booking.getEndTime());
+
+            if (!overlappingApproved.isEmpty()) {
                 throw new InvalidBookingException("This time slot is now booked by another approved booking");
             }
+
+            // When approving a booking, automatically reject all other PENDING bookings for the same slot
+            rejectOtherPendingBookings(booking);
         }
 
         BookingStatus oldStatus = booking.getStatus();
@@ -147,6 +205,49 @@ public class BookingServiceImpl implements BookingService {
         return mapToResponse(updated, resource, user);
     }
 
+    private void rejectOtherPendingBookings(Booking approvedBooking) {
+        List<Booking> allBookings = bookingRepository.findBookingsByResourceAndDate(
+                approvedBooking.getResourceId(), approvedBooking.getBookingDate());
+
+        int rejectedCount = 0;
+
+        for (Booking pending : allBookings) {
+            if (!pending.getId().equals(approvedBooking.getId()) &&
+                    pending.getStartTime().equals(approvedBooking.getStartTime()) &&
+                    pending.getEndTime().equals(approvedBooking.getEndTime()) &&
+                    pending.getStatus() == BookingStatus.PENDING) {
+
+                pending.setStatus(BookingStatus.REJECTED);
+                pending.setAdminReason("This time slot was approved for another user");
+                bookingRepository.save(pending);
+                rejectedCount++;
+
+                // Notify the rejected user
+                User rejectedUser = userRepository.findById(pending.getUserId()).orElse(null);
+                Resource resource = resourceRepository.findById(pending.getResourceId()).orElse(null);
+
+                if (rejectedUser != null && resource != null) {
+                    notificationService.sendNotification(
+                            rejectedUser.getId(),
+                            "Booking Rejected",
+                            String.format("Your booking request for %s on %s at %s-%s has been rejected because the time slot was approved for another user.",
+                                    resource.getName(), pending.getBookingDate(),
+                                    pending.getStartTime(), pending.getEndTime()),
+                            "BOOKING_REJECTED"
+                    );
+                }
+
+                log.info("Auto-rejected pending booking {} for slot {} on {}",
+                        pending.getId(), pending.getStartTime(), pending.getBookingDate());
+            }
+        }
+
+        if (rejectedCount > 0) {
+            log.info("Auto-rejected {} other pending bookings for slot {} on {}",
+                    rejectedCount, approvedBooking.getStartTime(), approvedBooking.getBookingDate());
+        }
+    }
+
     @Override
     @Transactional
     public BookingResponse cancelBooking(UUID bookingId, String userEmail) {
@@ -156,7 +257,7 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findByIdAndUserId(bookingId, user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found or not owned by user"));
 
-        if (booking.getStatus() == BookingStatus.APPROVED) {
+        if (booking.getStatus() == BookingStatus.APPROVED || booking.getStatus() == BookingStatus.PENDING) {
             booking.setStatus(BookingStatus.CANCELLED);
             Booking updated = bookingRepository.save(booking);
 
@@ -176,7 +277,7 @@ public class BookingServiceImpl implements BookingService {
 
             return mapToResponse(updated, resource, user);
         } else {
-            throw new InvalidBookingException("Only approved bookings can be cancelled");
+            throw new InvalidBookingException("Only pending or approved bookings can be cancelled");
         }
     }
 
@@ -197,7 +298,14 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public Page<BookingResponse> getAllBookings(UUID resourceId, String status, LocalDate bookingDate, Pageable pageable) {
-        BookingStatus bookingStatus = status != null ? BookingStatus.valueOf(status.toUpperCase()) : null;
+        BookingStatus bookingStatus = null;
+        if (status != null && !status.isEmpty()) {
+            try {
+                bookingStatus = BookingStatus.valueOf(status.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid status value: {}", status);
+            }
+        }
 
         return bookingRepository.findAllWithFilters(resourceId, bookingStatus, bookingDate, pageable)
                 .map(booking -> {
@@ -215,7 +323,7 @@ public class BookingServiceImpl implements BookingService {
         // Get all bookings for this resource on this date
         List<Booking> bookings = bookingRepository.findBookingsByResourceAndDate(resourceId, date);
 
-        // Separate approved bookings from pending/rejected
+        // Separate approved bookings from pending
         List<Booking> approvedBookings = bookings.stream()
                 .filter(b -> b.getStatus() == BookingStatus.APPROVED)
                 .collect(Collectors.toList());
@@ -229,25 +337,36 @@ public class BookingServiceImpl implements BookingService {
         List<AvailableTimeSlotsResponse.BookedSlot> bookedSlots = new ArrayList<>();
 
         LocalTime current = START_TIME;
+        LocalTime now = LocalTime.now();
+        LocalDate today = LocalDate.now();
+        boolean isToday = date.equals(today);
+
         while (current.isBefore(END_TIME)) {
             LocalTime slotEnd = current.plusHours(SLOT_DURATION_HOURS);
 
-            // Store current values for lambda (must be effectively final)
             final LocalTime finalCurrent = current;
             final LocalTime finalSlotEnd = slotEnd;
 
-            // Check if slot is approved
+            // Check if slot is in the past for today
+            boolean isPastSlot = isToday && current.isBefore(now);
+
+            // Check if slot is approved (blocked)
             boolean isApprovedBooked = approvedBookings.stream()
                     .anyMatch(b -> b.getStartTime().equals(finalCurrent) && b.getEndTime().equals(finalSlotEnd));
 
-            // Check if slot has pending booking
-            boolean hasPending = pendingBookings.stream()
-                    .anyMatch(b -> b.getStartTime().equals(finalCurrent) && b.getEndTime().equals(finalSlotEnd));
+            // Check if slot has pending booking (still available for others to book)
+            List<Booking> pendingForSlot = pendingBookings.stream()
+                    .filter(b -> b.getStartTime().equals(finalCurrent) && b.getEndTime().equals(finalSlotEnd))
+                    .collect(Collectors.toList());
 
+            boolean hasPending = !pendingForSlot.isEmpty();
+
+            // Slot is available if NOT approved AND not a past slot
+            // Pending bookings do NOT block availability
             allSlots.add(AvailableTimeSlotsResponse.TimeSlot.builder()
                     .startTime(finalCurrent)
                     .endTime(finalSlotEnd)
-                    .available(!isApprovedBooked)
+                    .available(!isApprovedBooked && !isPastSlot)
                     .build());
 
             if (isApprovedBooked) {
@@ -257,6 +376,7 @@ public class BookingServiceImpl implements BookingService {
                         .status(BookingStatus.APPROVED)
                         .build());
             } else if (hasPending) {
+                // Show pending status with count
                 bookedSlots.add(AvailableTimeSlotsResponse.BookedSlot.builder()
                         .startTime(finalCurrent)
                         .endTime(finalSlotEnd)
@@ -317,6 +437,21 @@ public class BookingServiceImpl implements BookingService {
         // Check if start time is on the hour
         if (startTime.getMinute() != 0) {
             throw new InvalidBookingException("Bookings must start on the hour");
+        }
+    }
+
+    private void validateBookingDateTime(LocalDate bookingDate, LocalTime startTime) {
+        LocalDate today = LocalDate.now();
+        LocalTime now = LocalTime.now();
+
+        // Check if date is in the past
+        if (bookingDate.isBefore(today)) {
+            throw new InvalidBookingException("Cannot book past dates");
+        }
+
+        // If booking is for today, check if the time is in the future
+        if (bookingDate.equals(today) && startTime.isBefore(now)) {
+            throw new InvalidBookingException("Cannot book a time slot that has already passed");
         }
     }
 

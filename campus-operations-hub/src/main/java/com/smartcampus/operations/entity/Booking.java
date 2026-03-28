@@ -3,6 +3,7 @@ package com.smartcampus.operations.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -14,10 +15,7 @@ import java.util.UUID;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "bookings", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"resource_id", "booking_date", "start_time", "end_time"},
-                name = "unique_booking_slot")
-})
+@Table(name = "bookings")  // No uniqueConstraints here
 public class Booking {
 
     @Id
@@ -51,7 +49,7 @@ public class Booking {
     @Column(length = 500)
     private String adminReason;
 
-    @Column(name = "created_at", updatable = false)
+    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at")

@@ -19,7 +19,7 @@ import java.util.UUID;
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
-    // Check for overlapping bookings (only APPROVED ones block the slot)
+    // Check for overlapping APPROVED bookings only
     @Query("SELECT b FROM Booking b WHERE b.resourceId = :resourceId " +
             "AND b.bookingDate = :bookingDate " +
             "AND b.status = 'APPROVED' " +
@@ -29,20 +29,31 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("resourceId") UUID resourceId,
             @Param("bookingDate") LocalDate bookingDate,
             @Param("startTime") LocalTime startTime,
-            @Param("endTime") LocalTime endTime
-    );
+            @Param("endTime") LocalTime endTime);
 
-    // Get all bookings for a resource on a specific date
+    // Get all bookings for a resource on a specific date (including pending)
     @Query("SELECT b FROM Booking b WHERE b.resourceId = :resourceId " +
             "AND b.bookingDate = :bookingDate " +
             "AND b.status != 'CANCELLED'")
     List<Booking> findBookingsByResourceAndDate(
             @Param("resourceId") UUID resourceId,
-            @Param("bookingDate") LocalDate bookingDate
-    );
+            @Param("bookingDate") LocalDate bookingDate);
 
     // Get user's bookings
     Page<Booking> findByUserIdOrderByBookingDateDescStartTimeDesc(UUID userId, Pageable pageable);
+
+    // Check if user has a specific booking
+    @Query("SELECT b FROM Booking b WHERE b.userId = :userId " +
+            "AND b.resourceId = :resourceId " +
+            "AND b.bookingDate = :bookingDate " +
+            "AND b.startTime = :startTime " +
+            "AND b.endTime = :endTime")
+    List<Booking> findByUserIdAndResourceIdAndBookingDateAndStartTimeAndEndTime(
+            @Param("userId") UUID userId,
+            @Param("resourceId") UUID resourceId,
+            @Param("bookingDate") LocalDate bookingDate,
+            @Param("startTime") LocalTime startTime,
+            @Param("endTime") LocalTime endTime);
 
     // Get all bookings with filters
     @Query("SELECT b FROM Booking b WHERE " +
@@ -57,9 +68,36 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // Get pending bookings for admin
     Page<Booking> findByStatusOrderByCreatedAtAsc(BookingStatus status, Pageable pageable);
 
+    Optional<Booking> findByIdAndUserId(UUID id, UUID userId);
+
     // Check if a booking exists with specific status
     boolean existsByResourceIdAndBookingDateAndStartTimeAndEndTimeAndStatus(
             UUID resourceId, LocalDate bookingDate, LocalTime startTime, LocalTime endTime, BookingStatus status);
 
-    Optional<Booking> findByIdAndUserId(UUID id, UUID userId);
+    // Get all pending bookings for a specific slot (excluding a specific booking)
+    @Query("SELECT b FROM Booking b WHERE b.resourceId = :resourceId " +
+            "AND b.bookingDate = :bookingDate " +
+            "AND b.startTime = :startTime " +
+            "AND b.endTime = :endTime " +
+            "AND b.status = 'PENDING' " +
+            "AND b.id != :excludeId")
+    List<Booking> findOtherPendingBookingsForSlot(
+            @Param("resourceId") UUID resourceId,
+            @Param("bookingDate") LocalDate bookingDate,
+            @Param("startTime") LocalTime startTime,
+            @Param("endTime") LocalTime endTime,
+            @Param("excludeId") UUID excludeId);
+
+    // Add this method to BookingRepository interface
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.resourceId = :resourceId " +
+            "AND b.bookingDate = :bookingDate " +
+            "AND b.startTime = :startTime " +
+            "AND b.endTime = :endTime " +
+            "AND b.status = 'PENDING'")
+    long countPendingBookingsForSlot(
+            @Param("resourceId") UUID resourceId,
+            @Param("bookingDate") LocalDate bookingDate,
+            @Param("startTime") LocalTime startTime,
+            @Param("endTime") LocalTime endTime);
+
 }

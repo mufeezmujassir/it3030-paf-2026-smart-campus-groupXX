@@ -8,6 +8,7 @@ import {
 import defaultImg from '../assets/default_resource.svg';
 import catalogImg from '../assets/assets_catalog.svg';
 import BookingCalendar from '../components/BookingCalendar';
+import {toast} from "react-toastify";
 
 const typeImageMap = {
     LAB: catalogImg,
@@ -226,6 +227,7 @@ const ResourceDetail = () => {
                         <BookingCalendar
                             resourceId={resource.id}
                             resourceName={resource.name}
+                            isResourceActive={resource.status === 'ACTIVE'}
                             onBookingCreated={handleBookingCreated}
                         />
                     </div>
