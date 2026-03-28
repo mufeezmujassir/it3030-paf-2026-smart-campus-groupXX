@@ -4,7 +4,7 @@ import { Calendar, Clock, User, Mail, CheckCircle, XCircle, Eye, Building, Chevr
 import bookingService from '../../services/bookingService';
 import resourceService from '../../services/resourceService';
 import { toast } from 'react-toastify';
-import { format, addDays, subDays, isBefore, startOfDay } from 'date-fns';
+import { format, addDays, subDays, isBefore, startOfDay, isAfter } from 'date-fns';
 
 const AdminBookingManagement = () => {
     const [resources, setResources] = useState([]);
@@ -92,8 +92,27 @@ const AdminBookingManagement = () => {
         setStats({ totalRequests: total, approved, pending, rejected, cancelled });
     };
 
+    const isDateInPast = (date) => {
+        return isBefore(startOfDay(date), startOfDay(new Date()));
+    };
+
+    const isTimeSlotPast = (startTime, date) => {
+        // If the entire date is in the past, all slots are past
+        if (isDateInPast(date)) {
+            return true;
+        }
+
+        // For today, check if the specific time slot has passed
+        const now = new Date();
+        const slotDateTime = new Date(date);
+        const [hours, minutes] = startTime.split(':');
+        slotDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+        return slotDateTime < now;
+    };
+
     const generateTimeSlots = (bookingsData) => {
         const slots = [];
+        const dateIsPast = isDateInPast(selectedDate);
 
         for (let hour = START_TIME; hour < END_TIME; hour++) {
             const startTime = `${hour.toString().padStart(2, '0')}:00`;
@@ -110,6 +129,9 @@ const AdminBookingManagement = () => {
             const rejectedCount = slotBookings.filter(b => b.status === 'REJECTED').length;
             const cancelledCount = slotBookings.filter(b => b.status === 'CANCELLED').length;
             const totalCount = slotBookings.length;
+
+            // Check if this slot is in the past (either date is past OR today with time passed)
+            const isPastSlot = dateIsPast || isTimeSlotPast(startTime, selectedDate);
 
             let slotStatus = 'available';
             if (approvedCount > 0) {
@@ -128,7 +150,8 @@ const AdminBookingManagement = () => {
                 rejectedCount,
                 cancelledCount,
                 totalCount,
-                status: slotStatus
+                status: slotStatus,
+                isPastSlot
             });
         }
 
@@ -136,12 +159,7 @@ const AdminBookingManagement = () => {
     };
 
     const handlePrevDay = () => {
-        const newDate = subDays(selectedDate, 1);
-        if (isBefore(startOfDay(newDate), startOfDay(new Date()))) {
-            toast.info('Cannot view past dates');
-            return;
-        }
-        setSelectedDate(newDate);
+        setSelectedDate(subDays(selectedDate, 1));
     };
 
     const handleNextDay = () => {
@@ -203,7 +221,8 @@ const AdminBookingManagement = () => {
         }
     };
 
-    const getSlotClasses = (status) => {
+    const getSlotClasses = (status, isPastSlot) => {
+        if (isPastSlot) return 'bg-gray-50 border-gray-200';
         if (status === 'approved') return 'bg-gradient-to-r from-rose-50 to-white border-rose-200';
         if (status === 'pending') return 'bg-gradient-to-r from-amber-50 to-white border-amber-200';
         return 'bg-white border-gray-100 hover:border-primary/20';
@@ -491,6 +510,9 @@ const AdminBookingManagement = () => {
                                         <p className="text-xs text-text-secondary">
                                             {format(selectedDate, 'MMM d, yyyy')}
                                         </p>
+                                        {isDateInPast(selectedDate) && (
+                                            <p className="text-[10px] text-gray-400 mt-0.5">Past Date - View Only</p>
+                                        )}
                                     </div>
                                     <button
                                         onClick={handleNextDay}
@@ -505,7 +527,7 @@ const AdminBookingManagement = () => {
                             <div className="flex flex-wrap items-center gap-4 mt-5 pt-2">
                                 <div className="flex items-center gap-2">
                                     <div className="w-3 h-3 bg-white border border-gray-300 rounded"></div>
-                                    <span className="text-xs text-text-secondary">Available</span>
+                                    <span className="text-xs text-text-secondary">Available (Future)</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-3 h-3 bg-amber-100 border border-amber-200 rounded"></div>
@@ -517,7 +539,11 @@ const AdminBookingManagement = () => {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded"></div>
-                                    <span className="text-xs text-text-secondary">Cancelled</span>
+                                    <span className="text-xs text-text-secondary">Cancelled/Rejected</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 bg-gray-200 border border-gray-300 rounded"></div>
+                                    <span className="text-xs text-text-secondary">Past Time Slots</span>
                                 </div>
                                 {filters.status && filters.status !== '' && (
                                     <div className="ml-auto">
@@ -553,10 +579,10 @@ const AdminBookingManagement = () => {
                                     {timeSlots.map((slot, idx) => (
                                         <div
                                             key={idx}
-                                            className={`border rounded-xl overflow-hidden transition-all duration-300 hover:shadow-md ${getSlotClasses(slot.status)}`}
+                                            className={`border rounded-xl overflow-hidden transition-all duration-300 hover:shadow-md ${getSlotClasses(slot.status, slot.isPastSlot)} ${slot.isPastSlot ? 'opacity-80' : ''}`}
                                         >
                                             {/* Slot Header */}
-                                            <div className="px-5 py-3 bg-gray-50/50 border-b flex items-center justify-between flex-wrap gap-2">
+                                            <div className={`px-5 py-3 border-b flex items-center justify-between flex-wrap gap-2 ${slot.isPastSlot ? 'bg-gray-100' : 'bg-gray-50/50'}`}>
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-8 h-8 rounded-lg bg-white border border-gray-100 flex items-center justify-center shadow-sm">
                                                         <Clock className="w-4 h-4 text-primary" />
@@ -568,6 +594,11 @@ const AdminBookingManagement = () => {
                                                         {slot.totalCount > 0 && (
                                                             <span className="ml-2 text-xs text-text-secondary">
                                                                 ({slot.totalCount} request{slot.totalCount !== 1 ? 's' : ''})
+                                                            </span>
+                                                        )}
+                                                        {slot.isPastSlot && (
+                                                            <span className="ml-2 text-xs text-gray-400">
+                                                                (Past time slot)
                                                             </span>
                                                         )}
                                                     </div>
@@ -609,7 +640,7 @@ const AdminBookingManagement = () => {
                                                     slot.bookings.map(booking => (
                                                         <div
                                                             key={booking.id}
-                                                            className="group bg-white rounded-lg border border-gray-100 p-4 hover:shadow-md transition-all duration-200 hover:border-primary/20"
+                                                            className={`group bg-white rounded-lg border p-4 hover:shadow-md transition-all duration-200 ${slot.isPastSlot ? 'border-gray-100' : 'border-gray-100 hover:border-primary/20'}`}
                                                         >
                                                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                                                 <div className="flex-1">
@@ -650,9 +681,9 @@ const AdminBookingManagement = () => {
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Action Buttons - Only for PENDING bookings */}
+                                                                {/* Action Buttons */}
                                                                 <div className="flex items-center gap-2 md:border-l md:border-gray-100 md:pl-4">
-                                                                    {booking.status === 'PENDING' ? (
+                                                                    {booking.status === 'PENDING' && !slot.isPastSlot ? (
                                                                         <>
                                                                             <button
                                                                                 onClick={() => openActionModal(booking, 'APPROVED')}
@@ -673,7 +704,8 @@ const AdminBookingManagement = () => {
                                                                         <div className="text-xs text-gray-400 px-2">
                                                                             {booking.status === 'APPROVED' ? 'Approved' :
                                                                                 booking.status === 'REJECTED' ? 'Rejected' :
-                                                                                    booking.status === 'CANCELLED' ? 'Cancelled' : 'Completed'}
+                                                                                    booking.status === 'CANCELLED' ? 'Cancelled' :
+                                                                                        slot.isPastSlot ? 'Past Booking' : 'Completed'}
                                                                         </div>
                                                                     )}
                                                                     <button
@@ -693,8 +725,17 @@ const AdminBookingManagement = () => {
                                                 ) : (
                                                     <div className="text-center py-6">
                                                         <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-full">
-                                                            <CheckCircle className="w-4 h-4 text-green-500" />
-                                                            <span className="text-sm text-text-secondary">No bookings for this time slot</span>
+                                                            {slot.isPastSlot ? (
+                                                                <>
+                                                                    <Clock className="w-4 h-4 text-gray-400" />
+                                                                    <span className="text-sm text-text-secondary">Past time slot - No bookings</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <CheckCircle className="w-4 h-4 text-green-500" />
+                                                                    <span className="text-sm text-text-secondary">Available for booking</span>
+                                                                </>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 )}
