@@ -298,23 +298,76 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public Page<BookingResponse> getAllBookings(UUID resourceId, String status, LocalDate bookingDate, Pageable pageable) {
+        log.info("Fetching bookings with filters - resourceId: {}, status: {}, bookingDate: {}, pageable: {}",
+                resourceId, status, bookingDate, pageable);
+
+        // Convert status to enum
         BookingStatus bookingStatus = null;
-        if (status != null && !status.isEmpty()) {
+        if (status != null && !status.trim().isEmpty()) {
             try {
                 bookingStatus = BookingStatus.valueOf(status.toUpperCase());
             } catch (IllegalArgumentException e) {
                 log.warn("Invalid status value: {}", status);
+                return Page.empty(pageable);
             }
         }
 
-        return bookingRepository.findAllWithFilters(resourceId, bookingStatus, bookingDate, pageable)
-                .map(booking -> {
-                    Resource resource = resourceRepository.findById(booking.getResourceId())
-                            .orElse(null);
-                    User user = userRepository.findById(booking.getUserId())
-                            .orElse(null);
-                    return mapToResponse(booking, resource, user);
-                });
+        Page<Booking> bookingPage;
+
+        // Use different repository methods based on which filters are present
+        if (resourceId != null && bookingStatus != null && bookingDate != null) {
+            // All three filters: status + date + resource
+            log.info("Using filter: status={}, date={}, resource={}", bookingStatus, bookingDate, resourceId);
+            bookingPage = bookingRepository.findByStatusAndBookingDateAndResourceIdOrderByCreatedAtDesc(
+                    bookingStatus, bookingDate, resourceId, pageable);
+
+        } else if (resourceId != null && bookingStatus != null) {
+            // Two filters: status + resource
+            log.info("Using filter: status={}, resource={}", bookingStatus, resourceId);
+            bookingPage = bookingRepository.findByStatusAndResourceIdOrderByCreatedAtDesc(
+                    bookingStatus, resourceId, pageable);
+
+        } else if (resourceId != null && bookingDate != null) {
+            // Two filters: date + resource
+            log.info("Using filter: date={}, resource={}", bookingDate, resourceId);
+            bookingPage = bookingRepository.findByBookingDateAndResourceIdOrderByCreatedAtDesc(
+                    bookingDate, resourceId, pageable);
+
+        } else if (bookingStatus != null && bookingDate != null) {
+            // Two filters: status + date
+            log.info("Using filter: status={}, date={}", bookingStatus, bookingDate);
+            bookingPage = bookingRepository.findByStatusAndBookingDateOrderByCreatedAtDesc(
+                    bookingStatus, bookingDate, pageable);
+
+        } else if (resourceId != null) {
+            // Single filter: resource only
+            log.info("Using filter: resource={}", resourceId);
+            bookingPage = bookingRepository.findByResourceIdOrderByCreatedAtDesc(resourceId, pageable);
+
+        } else if (bookingStatus != null) {
+            // Single filter: status only
+            log.info("Using filter: status={}", bookingStatus);
+            bookingPage = bookingRepository.findByStatusOrderByCreatedAtDesc(bookingStatus, pageable);
+
+        } else if (bookingDate != null) {
+            // Single filter: date only
+            log.info("Using filter: date={}", bookingDate);
+            bookingPage = bookingRepository.findByBookingDateOrderByCreatedAtDesc(bookingDate, pageable);
+
+        } else {
+            // No filters - get all bookings
+            log.info("Using filter: none (all bookings)");
+            bookingPage = bookingRepository.findAllByOrderByCreatedAtDesc(pageable);
+        }
+
+        log.info("Found {} bookings", bookingPage.getTotalElements());
+
+        // Convert to response DTOs
+        return bookingPage.map(booking -> {
+            Resource resource = resourceRepository.findById(booking.getResourceId()).orElse(null);
+            User user = userRepository.findById(booking.getUserId()).orElse(null);
+            return mapToResponse(booking, resource, user);
+        });
     }
 
     @Override

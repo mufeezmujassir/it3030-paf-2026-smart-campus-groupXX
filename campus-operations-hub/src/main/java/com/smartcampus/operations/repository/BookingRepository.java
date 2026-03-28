@@ -55,15 +55,31 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime);
 
-    // Get all bookings with filters
-    @Query("SELECT b FROM Booking b WHERE " +
-            "(:resourceId IS NULL OR b.resourceId = :resourceId) AND " +
-            "(:status IS NULL OR b.status = :status) AND " +
-            "(:bookingDate IS NULL OR b.bookingDate = :bookingDate)")
-    Page<Booking> findAllWithFilters(@Param("resourceId") UUID resourceId,
-                                     @Param("status") BookingStatus status,
-                                     @Param("bookingDate") LocalDate bookingDate,
-                                     Pageable pageable);
+    // ========== SEPARATE QUERY METHODS FOR ADMIN FILTERING ==========
+
+    // No filters - get all bookings
+    Page<Booking> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    // Filter by status only
+    Page<Booking> findByStatusOrderByCreatedAtDesc(BookingStatus status, Pageable pageable);
+
+    // Filter by date only
+    Page<Booking> findByBookingDateOrderByCreatedAtDesc(LocalDate bookingDate, Pageable pageable);
+
+    // Filter by resource only
+    Page<Booking> findByResourceIdOrderByCreatedAtDesc(UUID resourceId, Pageable pageable);
+
+    // Filter by status AND date
+    Page<Booking> findByStatusAndBookingDateOrderByCreatedAtDesc(BookingStatus status, LocalDate bookingDate, Pageable pageable);
+
+    // Filter by status AND resource
+    Page<Booking> findByStatusAndResourceIdOrderByCreatedAtDesc(BookingStatus status, UUID resourceId, Pageable pageable);
+
+    // Filter by date AND resource
+    Page<Booking> findByBookingDateAndResourceIdOrderByCreatedAtDesc(LocalDate bookingDate, UUID resourceId, Pageable pageable);
+
+    // Filter by status AND date AND resource (all three)
+    Page<Booking> findByStatusAndBookingDateAndResourceIdOrderByCreatedAtDesc(BookingStatus status, LocalDate bookingDate, UUID resourceId, Pageable pageable);
 
     // Get pending bookings for admin
     Page<Booking> findByStatusOrderByCreatedAtAsc(BookingStatus status, Pageable pageable);
@@ -88,7 +104,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("endTime") LocalTime endTime,
             @Param("excludeId") UUID excludeId);
 
-    // Add this method to BookingRepository interface
+    // Get count of pending bookings for a specific slot
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.resourceId = :resourceId " +
             "AND b.bookingDate = :bookingDate " +
             "AND b.startTime = :startTime " +
@@ -99,5 +115,4 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("bookingDate") LocalDate bookingDate,
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime);
-
 }

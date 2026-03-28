@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -72,15 +73,26 @@ public class BookingController {
         return ResponseEntity.ok(bookingService.checkConflict(resourceId, date, startTime, endTime));
     }
 
-    // Admin endpoints
+    // Admin endpoints - FIXED filtering
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Page<BookingResponse>> getAllBookings(
             @RequestParam(required = false) UUID resourceId,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) LocalDate bookingDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate bookingDate,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(bookingService.getAllBookings(resourceId, status, bookingDate, pageable));
+
+        // Log the received filters for debugging
+        System.out.println("Admin Booking Filters - ResourceId: " + resourceId +
+                ", Status: " + status +
+                ", BookingDate: " + bookingDate);
+
+        Page<BookingResponse> result = bookingService.getAllBookings(resourceId, status, bookingDate, pageable);
+
+        // Log the result count
+        System.out.println("Total bookings found: " + result.getTotalElements());
+
+        return ResponseEntity.ok(result);
     }
 
     @PatchMapping("/{id}/status")
