@@ -509,6 +509,7 @@ const TicketDetail = () => {
                     <div className="space-y-5">
 
                         {/* Actions */}
+                        {/* Admin/Technician actions panel */}
                         {isActive && (isAdmin || isTechnician) && (
                             <div className="rounded-2xl border p-5"
                                  style={{ backgroundColor: 'var(--color-surface)', borderColor: '#E8D5C4' }}>
@@ -517,17 +518,17 @@ const TicketDetail = () => {
                                     ⚡ Lifecycle Actions
                                 </h2>
                                 <div className="space-y-2">
-                                    {isAdmin && ticket.status === 'OPEN' && (
+                                    {isAdmin && ['OPEN', 'IN_PROGRESS'].includes(ticket.status) && (
                                         <button onClick={() => setShowAssignModal(true)}
                                                 className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition hover:opacity-80"
                                                 style={{ borderColor: '#E8D5C4', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-background)' }}>
-                                            👤 Assign Technician
+                                            👤 {ticket.assignedToName ? 'Reassign Technician' : 'Assign Technician'}
                                         </button>
                                     )}
                                     {(isAdmin || (isTechnician && isAssigned)) && ticket.status === 'IN_PROGRESS' && (
                                         <button onClick={() => setShowResolveModal(true)}
                                                 className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition hover:opacity-80 border-green-200 text-green-700 bg-green-50">
-                                            Mark Resolved
+                                            ✅ Mark Resolved
                                         </button>
                                     )}
                                     {isAdmin && ticket.status === 'RESOLVED' && (
@@ -543,23 +544,28 @@ const TicketDetail = () => {
                                             ❌ Reject Ticket
                                         </button>
                                     )}
-                                    {(isAdmin || isOwner) && (
+                                    {isAdmin && (
                                         <button onClick={handleDelete}
                                                 className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition hover:opacity-80 border-red-100 text-red-400 bg-white">
                                             🗑️ Delete Ticket
                                         </button>
                                     )}
-                                    {/* Owner can delete their own open tickets */}
-                                    {isOwner && ticket.status === 'OPEN' && !isAdmin && (
-                                        <div className="rounded-2xl border p-5 mt-5"
-                                             style={{ backgroundColor: 'var(--color-surface)', borderColor: '#E8D5C4' }}>
-                                            <button onClick={handleDelete}
-                                                    className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition hover:opacity-80 border-red-100 text-red-400 bg-white">
-                                                🗑️ Delete Ticket
-                                            </button>
-                                        </div>
-                                    )}
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Owner delete — completely separate, outside admin panel */}
+                        {isOwner && !isAdmin && !isTechnician && isActive && (
+                            <div className="rounded-2xl border p-5"
+                                 style={{ backgroundColor: 'var(--color-surface)', borderColor: '#E8D5C4' }}>
+                                <h2 className="text-sm font-bold mb-3"
+                                    style={{ color: 'var(--color-text-primary)' }}>
+                                    ⚙️ Ticket Actions
+                                </h2>
+                                <button onClick={handleDelete}
+                                        className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition hover:opacity-80 border-red-100 text-red-400 bg-white">
+                                    🗑️ Delete My Ticket
+                                </button>
                             </div>
                         )}
 

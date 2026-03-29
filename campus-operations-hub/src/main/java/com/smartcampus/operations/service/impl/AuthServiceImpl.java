@@ -61,6 +61,7 @@ public class AuthServiceImpl implements AuthService {
             }
             log.info("2FA required for admin: {}", user.getEmail());
             return AuthResponse.builder()
+                    .id(user.getId())
                     .email(user.getEmail())
                     .fullName(user.getFullName())
                     .role(user.getRole().name())
@@ -84,6 +85,7 @@ public class AuthServiceImpl implements AuthService {
         log.info("Admin login successful for: {}", user.getEmail());
 
         return AuthResponse.builder()
+                .id(user.getId())
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .role(user.getRole().name())
@@ -119,6 +121,7 @@ public class AuthServiceImpl implements AuthService {
             
             log.info("2FA required for user: {}", user.getEmail());
             return AuthResponse.builder()
+                    .id(user.getId())
                     .email(user.getEmail())
                     .fullName(user.getFullName())
                     .role(user.getRole().name())
@@ -141,6 +144,7 @@ public class AuthServiceImpl implements AuthService {
         log.info("OAuth login successful for: {}", user.getEmail());
 
         return AuthResponse.builder()
+                .id(user.getId())
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .role(user.getRole().name())
@@ -186,6 +190,7 @@ public class AuthServiceImpl implements AuthService {
         log.info("OTP verified successfully for: {}", user.getEmail());
 
         return AuthResponse.builder()
+                .id(user.getId())
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .role(user.getRole().name())
@@ -218,6 +223,7 @@ public class AuthServiceImpl implements AuthService {
         log.info("Token refreshed for: {}", user.getEmail());
 
         return AuthResponse.builder()
+                .id(user.getId())
                 .accessToken(newAccessToken)
                 .refreshToken(refreshToken) // Return same refresh token
                 .role(user.getRole().name())

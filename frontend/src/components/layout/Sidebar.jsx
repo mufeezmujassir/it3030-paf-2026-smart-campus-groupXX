@@ -31,10 +31,8 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
         ],
         TECHNICIAN: [
             { icon: <LayoutDashboard size={20} />, label: 'Tech Console', path: '/technician' },
-            { icon: <Wrench size={20} />, label: 'Maintenance', path: '/technician/maintenance' },
-            { icon: <Ticket size={20} />, label: 'My Tickets', path: '/tickets' },  
-            { icon: <HardHat size={20} />, label: 'Safety Logs', path: '/technician/safety' },
-        ]
+            { icon: <Wrench size={20} />, label: 'My Assignments', path: '/tickets' },
+        ],
     };
 
     const currentRoleMenu = menuItems[user?.role] || [];
