@@ -12,6 +12,8 @@ import com.smartcampus.operations.dto.TechnicianResponse;
 import java.util.Map;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -27,15 +29,33 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
     public TicketResponse createTicket(TicketCreateRequest request, String userEmail) {
         User user = getUserByEmail(userEmail);
 
+        // Auto-assign technician based on category specialization
+        String specialization = CATEGORY_SPECIALIZATION_MAP
+                .getOrDefault(request.getCategory().name(), "");
+
+        List<User> matched = specialization.isEmpty()
+                ? List.of()
+                : userRepository.findByRoleAndTechnicianSpecializationContainingIgnoreCase(
+                Role.TECHNICIAN, specialization);
+
+        User assignedTechnician = matched.stream().findFirst()
+                .orElseGet(() ->
+                        userRepository.findByRole(Role.TECHNICIAN)
+                                .stream()
+                                .findFirst()
+                                .orElse(null) // null if no technicians exist yet
+                );
+
         IncidentTicket ticket = IncidentTicket.builder()
                 .title(request.getTitle())
                 .category(request.getCategory())
                 .description(request.getDescription())
                 .priority(request.getPriority())
-                .status(TicketStatus.OPEN)
+                .status(assignedTechnician != null ? TicketStatus.IN_PROGRESS : TicketStatus.OPEN)
                 .resourceLocation(request.getResourceLocation())
                 .preferredContact(request.getPreferredContact())
                 .createdBy(user)
+                .assignedTo(assignedTechnician)
                 .build();
 
         return mapToResponse(ticketRepository.save(ticket));
@@ -193,19 +213,20 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                 .getOrDefault(ticket.getCategory().name(), "");
 
         // Try to find a matching technician by specialization
-        Optional<User> matched = specialization.isEmpty()
-                ? Optional.empty()
+        List<User> matched = specialization.isEmpty()
+                ? List.of()
                 : userRepository.findByRoleAndTechnicianSpecializationContainingIgnoreCase(
                 Role.TECHNICIAN, specialization);
 
         // Fall back to any available technician
-        User technician = matched.orElseGet(() ->
-                userRepository.findByRole(Role.TECHNICIAN)
-                        .stream()
-                        .findFirst()
-                        .orElseThrow(() -> new IllegalArgumentException(
-                                "No technicians available for auto-assignment"))
-        );
+        User technician = matched.stream().findFirst()
+                .orElseGet(() ->
+                        userRepository.findByRole(Role.TECHNICIAN)
+                                .stream()
+                                .findFirst()
+                                .orElseThrow(() -> new IllegalArgumentException(
+                                        "No technicians available for auto-assignment"))
+                );
 
         ticket.setAssignedTo(technician);
         ticket.setStatus(TicketStatus.IN_PROGRESS);

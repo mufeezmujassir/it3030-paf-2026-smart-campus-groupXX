@@ -5,6 +5,7 @@ import com.smartcampus.operations.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,5 +19,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByRole(Role role);
 
     List<User> findByRole(Role role);
-    Optional<User> findByRoleAndTechnicianSpecializationContainingIgnoreCase(Role role, String specialization);
+    List<User> findByRoleAndTechnicianSpecializationContainingIgnoreCase(
+            Role role, String specialization);;
 }
