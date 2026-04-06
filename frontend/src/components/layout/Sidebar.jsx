@@ -30,6 +30,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
         ],
         STAFF: [
             { icon: <LayoutDashboard size={20} />, label: 'Staff Portal', path: '/staff' },
+            { icon: <Building size={20} />, label: 'Catalogue', path: '/resources' },
             { icon: <ClipboardList size={20} />, label: 'Management', path: '/staff/manage' },
             { icon: <CalendarDays size={20} />, label: 'My Bookings', path: '/staff/my-bookings' },
             { icon: <Briefcase size={20} />, label: 'My Department', path: '/staff/department' },
