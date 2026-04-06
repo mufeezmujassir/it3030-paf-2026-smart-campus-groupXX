@@ -61,9 +61,12 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
             getRedirectStrategy().sendRedirect(request, response, targetUrl);
 
         } catch (Exception e) {
-            log.error("OAuth error during processing: {}", e.getMessage());
-            String errorUrl = UriComponentsBuilder.fromUriString("http://localhost:5173/login")
-                    .queryParam("error", URLEncoder.encode(e.getMessage(), StandardCharsets.UTF_8))
+            log.error("OAuth error during processing: ", e);
+            String errorMessage = (e.getMessage() != null && !e.getMessage().isEmpty()) 
+                    ? e.getMessage() : "Authentication failed";
+            
+            String errorUrl = UriComponentsBuilder.fromUriString("http://localhost:5173/oauth2/redirect")
+                    .queryParam("error", errorMessage)
                     .build().toUriString();
             getRedirectStrategy().sendRedirect(request, response, errorUrl);
         }
