@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { 
+import {
     LayoutDashboard, Users, Building, Calendar, Ticket, Settings, LogOut,
     BookOpen, GraduationCap, ClipboardList, Briefcase, Wrench, HardHat, Leaf, X
 } from 'lucide-react';
@@ -56,7 +56,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
                     </div>
                 </div>
                 {/* Close button for mobile */}
-                <button 
+                <button
                     onClick={closeSidebar}
                     className="lg:hidden p-2 text-gray-400 hover:text-gray-600 transition"
                 >
@@ -71,12 +71,11 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
                     <Link
                         key={item.path}
                         to={item.path}
-                        onClick={() => { if(window.innerWidth < 1024) closeSidebar() }}
-                        className={`flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${
-                            location.pathname === item.path 
-                            ? 'bg-primary text-white shadow-lg shadow-primary/25' 
-                            : 'text-text-secondary hover:bg-primary/[0.04] hover:text-primary'
-                        }`}
+                        onClick={() => { if (window.innerWidth < 1024) closeSidebar() }}
+                        className={`flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${location.pathname === item.path
+                                ? 'bg-primary text-white shadow-lg shadow-primary/25'
+                                : 'text-text-secondary hover:bg-primary/[0.04] hover:text-primary'
+                            }`}
                     >
                         <div className={`transition-colors duration-300 ${location.pathname === item.path ? 'text-white' : 'text-gray-400 group-hover:text-primary'}`}>
                             {item.icon}
@@ -84,6 +83,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
                         <span>{item.label}</span>
                     </Link>
                 ))}
+
             </nav>
 
             {/* Bottom Section */}
@@ -91,17 +91,16 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
                 <p className="px-4 mb-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest">System & Config</p>
                 <Link
                     to="/settings"
-                    onClick={() => { if(window.innerWidth < 1024) closeSidebar() }}
-                    className={`flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${
-                        location.pathname === '/settings' 
-                        ? 'bg-primary text-white shadow-lg shadow-primary/25' 
-                        : 'text-text-secondary hover:bg-primary/[0.04] hover:text-primary'
-                    }`}
+                    onClick={() => { if (window.innerWidth < 1024) closeSidebar() }}
+                    className={`flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${location.pathname === '/settings'
+                            ? 'bg-primary text-white shadow-lg shadow-primary/25'
+                            : 'text-text-secondary hover:bg-primary/[0.04] hover:text-primary'
+                        }`}
                 >
                     <Settings className={`w-5 h-5 transition-colors ${location.pathname === '/settings' ? 'text-white' : 'text-gray-400 group-hover:text-primary'}`} />
                     <span>Account Settings</span>
                 </Link>
-                <button 
+                <button
                     onClick={logout}
                     className="flex w-full items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold text-red-500 hover:bg-red-50 transition-all group"
                 >

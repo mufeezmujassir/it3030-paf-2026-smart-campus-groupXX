@@ -35,8 +35,8 @@ const UserManagement = () => {
     const fetchUsers = async () => {
         setLoading(true);
         try {
-            const response = await api.get('/users');
-            setUsers(response.data);
+            const response = await api.get('/admin/users');
+            setUsers(response.data._embedded ? response.data._embedded.userResponseList : response.data);
         } catch (error) {
             toast.error('Failed to load users');
         } finally {
@@ -60,7 +60,7 @@ const UserManagement = () => {
                 experienceYears: newUserData.role === 'TECHNICIAN' ? parseInt(newUserData.experienceYears) || 0 : null
             };
 
-            await api.post('/users', payload);
+            await api.post('/admin/users', payload);
             toast.success('User registered successfully');
             setIsAddUserModalOpen(false);
             fetchUsers(); // Refresh list
@@ -73,6 +73,17 @@ const UserManagement = () => {
             toast.error(error.response?.data?.message || 'Failed to register user');
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const handleRemoveUser = async (id) => {
+        if (!window.confirm('Are you certain you want to remove this institutional identity profile? This action is irreversible.')) return;
+        try {
+            await api.delete(`/admin/users/${id}`);
+            toast.success('User removed from system');
+            fetchUsers();
+        } catch (error) {
+            toast.error('Failed to remove user');
         }
     };
 
@@ -95,31 +106,32 @@ const UserManagement = () => {
     }
 
     return (
-        <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-700">
+        <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-700 px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-text-primary">User Directory</h1>
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-text-primary">User Directory</h1>
                     <p className="text-sm text-text-secondary mt-1 max-w-xl">Manage all campus members, their security levels, and role-specific institutional metadata.</p>
                 </div>
-                <div className="flex items-center space-x-3">
-                    <div className="relative group">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-3 sm:space-y-0 sm:space-x-3">
+                    <div className="relative group flex-1 sm:flex-initial">
                         <Search className="w-4 h-4 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2 group-focus-within:text-primary transition-colors" />
                         <input 
                             type="text"
                             placeholder="Find by name, email, ID..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-11 pr-4 py-2.5 border border-gray-100 bg-white/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 w-72 transition-all shadow-sm"
+                            className="pl-11 pr-4 py-2.5 border border-gray-100 bg-white/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 w-full sm:w-72 transition-all shadow-sm"
                         />
                     </div>
-                    <button onClick={() => setIsAddUserModalOpen(true)} className="flex items-center space-x-2 px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary-hover shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]">
+                    <button onClick={() => setIsAddUserModalOpen(true)} className="flex items-center justify-center space-x-2 px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary-hover shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]">
                         <UserPlus size={18} />
                         <span>Register User</span>
                     </button>
                 </div>
             </div>
 
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden min-h-[400px]">
+            {/* User List: Table for Desktop, Cards for Mobile */}
+            <div className="hidden lg:block bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden min-h-[400px]">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
@@ -158,7 +170,6 @@ const UserManagement = () => {
                                             }`}>
                                                 {user.role}
                                             </span>
-                                            {/* Role Specific Metadata badge */}
                                             {user.studentId && (
                                                 <div className="flex items-center text-[10px] font-bold text-gray-400 uppercase tracking-tight">
                                                     <GraduationCap className="w-3 h-3 mr-1" />
@@ -204,9 +215,25 @@ const UserManagement = () => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-5 text-right">
-                                        <button className="text-gray-300 hover:text-primary p-2 rounded-xl border border-transparent hover:border-primary/10 hover:bg-primary/5 transition-all">
-                                            <MoreVertical className="w-5 h-5" />
-                                        </button>
+                                        <div className="relative inline-block text-left group/action">
+                                            <button className="text-gray-300 hover:text-primary p-2 rounded-xl border border-transparent hover:border-primary/10 hover:bg-primary/5 transition-all">
+                                                <MoreVertical className="w-5 h-5" />
+                                            </button>
+                                            {/* Bridge container to prevent hover loss */}
+                                            <div className="absolute right-0 w-48 pt-2 origin-top-right hidden group-hover/action:block z-50">
+                                                <div className="bg-white border border-gray-100 divide-y divide-gray-50 rounded-xl shadow-xl outline-none overflow-hidden">
+                                                    <div className="py-1">
+                                                        <button 
+                                                            onClick={() => handleRemoveUser(user.id)} 
+                                                            className="flex items-center w-full px-4 py-2.5 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors uppercase tracking-widest"
+                                                        >
+                                                            <XCircle className="w-4 h-4 mr-2" />
+                                                            Remove Identity
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                             )) : (
@@ -225,6 +252,58 @@ const UserManagement = () => {
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            {/* Mobile Cards Layout */}
+            <div className="lg:hidden space-y-4">
+                {filteredUsers.length > 0 ? filteredUsers.map((user) => (
+                    <div key={user.id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center text-primary font-bold text-sm">
+                                    {user.fullName?.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                    <p className="text-sm font-bold text-text-primary leading-tight">{user.fullName || 'Unnamed'}</p>
+                                    <p className="text-[10px] text-text-secondary mt-0.5">{user.email}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => handleRemoveUser(user.id)} className="p-2 text-red-400 hover:text-red-500 bg-red-50 rounded-lg transition-colors">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 pt-2">
+                            <div>
+                                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">Role & Metadata</p>
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                    user.role === 'ADMIN' ? 'bg-red-50 text-red-600' : 
+                                    user.role === 'STAFF' ? 'bg-blue-50 text-blue-600' : 
+                                    'bg-green-50 text-green-600'
+                                }`}>
+                                    {user.role}
+                                </span>
+                            </div>
+                            <div>
+                                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">Department</p>
+                                <p className="text-[10px] font-bold text-text-secondary">{user.department || 'N/A'}</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-3 border-t border-gray-50">
+                            <div className="flex items-center space-x-1.5">
+                                <div className={`w-1.5 h-1.5 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                                <span className="text-[10px] font-bold text-text-primary uppercase">{user.isActive ? 'Active' : 'Suspended'}</span>
+                            </div>
+                            <div className="flex items-center space-x-1 text-[9px] font-extrabold text-orange-500 uppercase tracking-wider">
+                                <Shield className="w-3 h-3" />
+                                <span>MFA {user.twoFactorEnabled ? 'ON' : 'OFF'}</span>
+                            </div>
+                        </div>
+                    </div>
+                )) : (
+                    <div className="bg-white border border-gray-100 rounded-2xl p-12 text-center">
+                        <p className="text-sm font-bold text-text-secondary">No members discovered</p>
+                    </div>
+                )}
             </div>
 
             {/* Register New User Modal */}

@@ -110,13 +110,13 @@ const ProfileSettings = () => {
     );
 
     return (
-        <div className="space-y-8 max-w-5xl mx-auto">
+        <div className="space-y-8 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-text-primary">Account Settings</h1>
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-text-primary">Account Settings</h1>
                     <p className="text-text-secondary text-sm mt-1">Manage your identity, security preferences, and institutional profile.</p>
                 </div>
-                <div className="flex items-center space-x-2 text-[10px] font-bold text-text-secondary uppercase tracking-widest bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100 shadow-sm">
+                <div className="flex items-center space-x-2 text-[10px] font-bold text-text-secondary uppercase tracking-widest bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100 shadow-sm w-fit">
                     <Activity className="w-3.5 h-3.5 text-primary" />
                     <span>Member since {new Date(profileData?.createdAt).toLocaleDateString()}</span>
                 </div>
@@ -125,7 +125,7 @@ const ProfileSettings = () => {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 {/* Profile Form */}
                 <div className="lg:col-span-8 space-y-6">
-                    <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm relative pt-12 overflow-hidden">
+                    <div className="bg-white p-5 sm:p-8 rounded-2xl border border-gray-100 shadow-sm relative pt-12 overflow-hidden">
                         {/* Decorative background element */}
                         <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl pointer-events-none" />
                         
@@ -134,11 +134,11 @@ const ProfileSettings = () => {
                         </div>
                         
                         <div className="mb-8">
-                            <h3 className="text-xl font-bold text-text-primary">Profile Information</h3>
+                            <h3 className="text-lg sm:text-xl font-bold text-text-primary">Profile Information</h3>
                             <p className="text-sm text-text-secondary mt-1">Update your personal details and how others see you on the hub.</p>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-6 mb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">First Name</label>
                                 <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" />
