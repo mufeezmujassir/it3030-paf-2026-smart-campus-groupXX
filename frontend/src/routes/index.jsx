@@ -15,6 +15,7 @@ import { ProtectedRoute } from './ProtectedRoute';
 import { RoleBasedRoute } from './RoleBasedRoute';
 import AdminBookingManagement from '../pages/admin/AdminBookingManagement';
 import MyBookings from '../pages/MyBookings';  // Add this import
+import MaintenanceRequests from '../pages/technician/MaintenanceRequests';
 
 const AppRoutes = () => {
     return (
@@ -81,7 +82,7 @@ const AppRoutes = () => {
                 }>
                     <Route index element={<div className="p-8">Technician Dashboard</div>} />
                     <Route path="my-bookings" element={<MyBookings />} />
-                    <Route path="maintenance" element={<div className="p-8">Maintenance</div>} />
+                    <Route path="maintenance" element={<MaintenanceRequests />} />
                     <Route path="safety" element={<div className="p-8">Safety Logs</div>} />
                     <Route path="environment" element={<div className="p-8">Environment</div>} />
                 </Route>

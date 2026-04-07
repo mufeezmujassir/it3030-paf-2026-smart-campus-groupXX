@@ -68,4 +68,14 @@ public class Booking {
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
+
+    @Column(name = "booking_type", length = 50)
+    @Builder.Default
+    private String bookingType = "REGULAR";
+
+    @Column(name = "issue_description", length = 500)
+    private String issueDescription;
+
+    @Column(name = "priority", length = 50)
+    private String priority;
 }

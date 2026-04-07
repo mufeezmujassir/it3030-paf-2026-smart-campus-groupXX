@@ -1,10 +1,10 @@
 // src/pages/admin/AdminBookingManagement.jsx
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Mail, CheckCircle, XCircle, Eye, Building, ChevronLeft, ChevronRight, AlertCircle, Loader2, Users, TrendingUp, Award, Clock as ClockIcon, Filter, X } from 'lucide-react';
+import { Calendar, Clock, User, Mail, CheckCircle, XCircle, Eye, Building, ChevronLeft, ChevronRight, AlertCircle, Loader2, Users, TrendingUp, Award, Clock as ClockIcon, Filter, X, Wrench } from 'lucide-react';
 import bookingService from '../../services/bookingService';
 import resourceService from '../../services/resourceService';
 import { toast } from 'react-toastify';
-import { format, addDays, subDays, isBefore, startOfDay, isAfter } from 'date-fns';
+import { format, addDays, subDays, isBefore, startOfDay } from 'date-fns';
 
 const AdminBookingManagement = () => {
     const [resources, setResources] = useState([]);
@@ -12,7 +12,7 @@ const AdminBookingManagement = () => {
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [calendarLoading, setCalendarLoading] = useState(false);
     const [timeSlots, setTimeSlots] = useState([]);
-    const [stats, setStats] = useState({ totalRequests: 0, approved: 0, pending: 0, rejected: 0, cancelled: 0 });
+    const [stats, setStats] = useState({ totalRequests: 0, approved: 0, pending: 0, rejected: 0, cancelled: 0, maintenance: 0 });
 
     const [filters, setFilters] = useState({
         status: ''
@@ -89,7 +89,8 @@ const AdminBookingManagement = () => {
         const pending = bookingsData.filter(b => b.status === 'PENDING').length;
         const rejected = bookingsData.filter(b => b.status === 'REJECTED').length;
         const cancelled = bookingsData.filter(b => b.status === 'CANCELLED').length;
-        setStats({ totalRequests: total, approved, pending, rejected, cancelled });
+        const maintenance = bookingsData.filter(b => b.bookingType === 'MAINTENANCE').length;
+        setStats({ totalRequests: total, approved, pending, rejected, cancelled, maintenance });
     };
 
     const isDateInPast = (date) => {
@@ -97,12 +98,9 @@ const AdminBookingManagement = () => {
     };
 
     const isTimeSlotPast = (startTime, date) => {
-        // If the entire date is in the past, all slots are past
         if (isDateInPast(date)) {
             return true;
         }
-
-        // For today, check if the specific time slot has passed
         const now = new Date();
         const slotDateTime = new Date(date);
         const [hours, minutes] = startTime.split(':');
@@ -128,9 +126,9 @@ const AdminBookingManagement = () => {
             const pendingCount = slotBookings.filter(b => b.status === 'PENDING').length;
             const rejectedCount = slotBookings.filter(b => b.status === 'REJECTED').length;
             const cancelledCount = slotBookings.filter(b => b.status === 'CANCELLED').length;
+            const maintenanceCount = slotBookings.filter(b => b.bookingType === 'MAINTENANCE').length;
             const totalCount = slotBookings.length;
 
-            // Check if this slot is in the past (either date is past OR today with time passed)
             const isPastSlot = dateIsPast || isTimeSlotPast(startTime, selectedDate);
 
             let slotStatus = 'available';
@@ -149,6 +147,7 @@ const AdminBookingManagement = () => {
                 pendingCount,
                 rejectedCount,
                 cancelledCount,
+                maintenanceCount,
                 totalCount,
                 status: slotStatus,
                 isPastSlot
@@ -263,6 +262,15 @@ const AdminBookingManagement = () => {
         }
     };
 
+    const getUserRoleBadge = (role) => {
+        switch(role) {
+            case 'TECHNICIAN': return 'bg-purple-100 text-purple-700';
+            case 'STAFF': return 'bg-blue-100 text-blue-700';
+            case 'ADMIN': return 'bg-red-100 text-red-700';
+            default: return 'bg-green-100 text-green-700';
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
             <div className="max-w-7xl mx-auto p-6 space-y-6">
@@ -300,6 +308,9 @@ const AdminBookingManagement = () => {
                                         </div>
                                         <div className="px-3 py-1.5 bg-gray-100 rounded-full">
                                             <span className="text-xs font-semibold text-gray-600">✗ {stats.cancelled} Cancelled</span>
+                                        </div>
+                                        <div className="px-3 py-1.5 bg-purple-100 rounded-full">
+                                            <span className="text-xs font-semibold text-purple-600">🔧 {stats.maintenance} Maintenance</span>
                                         </div>
                                     </div>
                                 )}
@@ -446,37 +457,13 @@ const AdminBookingManagement = () => {
 
                 {/* Stats Cards - Only show when resource selected */}
                 {selectedResource && stats.totalRequests > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                        <StatCard
-                            icon={<TrendingUp className="w-5 h-5 text-primary" />}
-                            title="Total Requests"
-                            value={stats.totalRequests}
-                            color="primary"
-                        />
-                        <StatCard
-                            icon={<CheckCircle className="w-5 h-5 text-emerald-500" />}
-                            title="Approved"
-                            value={stats.approved}
-                            color="emerald"
-                        />
-                        <StatCard
-                            icon={<ClockIcon className="w-5 h-5 text-amber-500" />}
-                            title="Pending"
-                            value={stats.pending}
-                            color="amber"
-                        />
-                        <StatCard
-                            icon={<XCircle className="w-5 h-5 text-rose-500" />}
-                            title="Rejected"
-                            value={stats.rejected}
-                            color="rose"
-                        />
-                        <StatCard
-                            icon={<XCircle className="w-5 h-5 text-gray-500" />}
-                            title="Cancelled"
-                            value={stats.cancelled}
-                            color="gray"
-                        />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                        <StatCard icon={<TrendingUp className="w-5 h-5 text-primary" />} title="Total Requests" value={stats.totalRequests} color="primary" />
+                        <StatCard icon={<CheckCircle className="w-5 h-5 text-emerald-500" />} title="Approved" value={stats.approved} color="emerald" />
+                        <StatCard icon={<ClockIcon className="w-5 h-5 text-amber-500" />} title="Pending" value={stats.pending} color="amber" />
+                        <StatCard icon={<XCircle className="w-5 h-5 text-rose-500" />} title="Rejected" value={stats.rejected} color="rose" />
+                        <StatCard icon={<XCircle className="w-5 h-5 text-gray-500" />} title="Cancelled" value={stats.cancelled} color="gray" />
+                        <StatCard icon={<Wrench className="w-5 h-5 text-purple-500" />} title="Maintenance" value={stats.maintenance} color="purple" />
                     </div>
                 )}
 
@@ -497,139 +484,55 @@ const AdminBookingManagement = () => {
                                 </div>
 
                                 <div className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 p-1 shadow-sm">
-                                    <button
-                                        onClick={handlePrevDay}
-                                        className="p-2 hover:bg-gray-50 rounded-lg transition-colors"
-                                    >
-                                        <ChevronLeft className="w-5 h-5 text-gray-600" />
-                                    </button>
+                                    <button onClick={handlePrevDay} className="p-2 hover:bg-gray-50 rounded-lg transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
                                     <div className="px-4 py-1 text-center">
-                                        <p className="text-sm font-semibold text-text-primary">
-                                            {format(selectedDate, 'EEEE')}
-                                        </p>
-                                        <p className="text-xs text-text-secondary">
-                                            {format(selectedDate, 'MMM d, yyyy')}
-                                        </p>
-                                        {isDateInPast(selectedDate) && (
-                                            <p className="text-[10px] text-gray-400 mt-0.5">Past Date - View Only</p>
-                                        )}
+                                        <p className="text-sm font-semibold text-text-primary">{format(selectedDate, 'EEEE')}</p>
+                                        <p className="text-xs text-text-secondary">{format(selectedDate, 'MMM d, yyyy')}</p>
+                                        {isDateInPast(selectedDate) && <p className="text-[10px] text-gray-400 mt-0.5">Past Date - View Only</p>}
                                     </div>
-                                    <button
-                                        onClick={handleNextDay}
-                                        className="p-2 hover:bg-gray-50 rounded-lg transition-colors"
-                                    >
-                                        <ChevronRight className="w-5 h-5 text-gray-600" />
-                                    </button>
+                                    <button onClick={handleNextDay} className="p-2 hover:bg-gray-50 rounded-lg transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
                                 </div>
                             </div>
 
                             {/* Legend */}
                             <div className="flex flex-wrap items-center gap-4 mt-5 pt-2">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-white border border-gray-300 rounded"></div>
-                                    <span className="text-xs text-text-secondary">Available (Future)</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-amber-100 border border-amber-200 rounded"></div>
-                                    <span className="text-xs text-text-secondary">Pending Requests</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-rose-100 border border-rose-200 rounded"></div>
-                                    <span className="text-xs text-text-secondary">Approved Bookings</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded"></div>
-                                    <span className="text-xs text-text-secondary">Cancelled/Rejected</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-gray-200 border border-gray-300 rounded"></div>
-                                    <span className="text-xs text-text-secondary">Past Time Slots</span>
-                                </div>
-                                {filters.status && filters.status !== '' && (
-                                    <div className="ml-auto">
-                                        <div className="px-3 py-1 bg-primary/10 rounded-full">
-                                            <span className="text-xs text-primary font-medium">
-                                                Filtered: {getActiveFilterName()}
-                                            </span>
-                                        </div>
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-white border border-gray-300 rounded"></div><span className="text-xs text-text-secondary">Available (Future)</span></div>
+                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-100 border border-amber-200 rounded"></div><span className="text-xs text-text-secondary">Pending Requests</span></div>
+                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-rose-100 border border-rose-200 rounded"></div><span className="text-xs text-text-secondary">Approved Bookings</span></div>
+                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded"></div><span className="text-xs text-text-secondary">Cancelled/Rejected</span></div>
+                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-purple-100 border border-purple-200 rounded"></div><span className="text-xs text-text-secondary">Maintenance Request</span></div>
+                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-gray-200 border border-gray-300 rounded"></div><span className="text-xs text-text-secondary">Past Time Slots</span></div>
+                                {filters.status && filters.status !== '' && (<div className="ml-auto"><div className="px-3 py-1 bg-primary/10 rounded-full"><span className="text-xs text-primary font-medium">Filtered: {getActiveFilterName()}</span></div></div>)}
                             </div>
                         </div>
 
                         {/* Time Slots */}
                         <div className="p-6">
                             {calendarLoading ? (
-                                <div className="flex flex-col items-center justify-center py-16">
-                                    <Loader2 className="w-10 h-10 text-primary animate-spin mb-3" />
-                                    <p className="text-text-secondary text-sm">Loading bookings...</p>
-                                </div>
+                                <div className="flex flex-col items-center justify-center py-16"><Loader2 className="w-10 h-10 text-primary animate-spin mb-3" /><p className="text-text-secondary text-sm">Loading bookings...</p></div>
                             ) : timeSlots.length === 0 ? (
-                                <div className="text-center py-16">
-                                    <div className="w-20 h-20 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                        <Clock className="w-10 h-10 text-gray-300" />
-                                    </div>
-                                    <h3 className="text-lg font-semibold text-text-primary mb-1">No Time Slots Available</h3>
-                                    <p className="text-sm text-text-secondary">
-                                        Bookings are available from 8:00 AM to 5:00 PM
-                                    </p>
-                                </div>
+                                <div className="text-center py-16"><div className="w-20 h-20 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Clock className="w-10 h-10 text-gray-300" /></div><h3 className="text-lg font-semibold text-text-primary mb-1">No Time Slots Available</h3><p className="text-sm text-text-secondary">Bookings are available from 8:00 AM to 5:00 PM</p></div>
                             ) : (
                                 <div className="space-y-3">
                                     {timeSlots.map((slot, idx) => (
-                                        <div
-                                            key={idx}
-                                            className={`border rounded-xl overflow-hidden transition-all duration-300 hover:shadow-md ${getSlotClasses(slot.status, slot.isPastSlot)} ${slot.isPastSlot ? 'opacity-80' : ''}`}
-                                        >
+                                        <div key={idx} className={`border rounded-xl overflow-hidden transition-all duration-300 hover:shadow-md ${getSlotClasses(slot.status, slot.isPastSlot)} ${slot.isPastSlot ? 'opacity-80' : ''}`}>
                                             {/* Slot Header */}
                                             <div className={`px-5 py-3 border-b flex items-center justify-between flex-wrap gap-2 ${slot.isPastSlot ? 'bg-gray-100' : 'bg-gray-50/50'}`}>
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-white border border-gray-100 flex items-center justify-center shadow-sm">
-                                                        <Clock className="w-4 h-4 text-primary" />
-                                                    </div>
+                                                    <div className="w-8 h-8 rounded-lg bg-white border border-gray-100 flex items-center justify-center shadow-sm"><Clock className="w-4 h-4 text-primary" /></div>
                                                     <div>
-                                                        <span className="text-base font-semibold text-text-primary">
-                                                            {slot.startTime} - {slot.endTime}
-                                                        </span>
-                                                        {slot.totalCount > 0 && (
-                                                            <span className="ml-2 text-xs text-text-secondary">
-                                                                ({slot.totalCount} request{slot.totalCount !== 1 ? 's' : ''})
-                                                            </span>
-                                                        )}
-                                                        {slot.isPastSlot && (
-                                                            <span className="ml-2 text-xs text-gray-400">
-                                                                (Past time slot)
-                                                            </span>
-                                                        )}
+                                                        <span className="text-base font-semibold text-text-primary">{slot.startTime} - {slot.endTime}</span>
+                                                        {slot.totalCount > 0 && (<span className="ml-2 text-xs text-text-secondary">({slot.totalCount} request{slot.totalCount !== 1 ? 's' : ''})</span>)}
+                                                        {slot.isPastSlot && (<span className="ml-2 text-xs text-gray-400">(Past time slot)</span>)}
                                                     </div>
                                                 </div>
-
                                                 {slot.totalCount > 0 && (
                                                     <div className="flex gap-2 flex-wrap">
-                                                        {slot.approvedCount > 0 && (
-                                                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg text-xs font-medium text-emerald-600">
-                                                                <CheckCircle className="w-3 h-3" />
-                                                                {slot.approvedCount}
-                                                            </span>
-                                                        )}
-                                                        {slot.pendingCount > 0 && (
-                                                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-lg text-xs font-medium text-amber-600">
-                                                                <Clock className="w-3 h-3" />
-                                                                {slot.pendingCount}
-                                                            </span>
-                                                        )}
-                                                        {slot.rejectedCount > 0 && (
-                                                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 rounded-lg text-xs font-medium text-rose-600">
-                                                                <XCircle className="w-3 h-3" />
-                                                                {slot.rejectedCount}
-                                                            </span>
-                                                        )}
-                                                        {slot.cancelledCount > 0 && (
-                                                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-600">
-                                                                <XCircle className="w-3 h-3" />
-                                                                {slot.cancelledCount}
-                                                            </span>
-                                                        )}
+                                                        {slot.approvedCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg text-xs font-medium text-emerald-600"><CheckCircle className="w-3 h-3" />{slot.approvedCount}</span>)}
+                                                        {slot.pendingCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-lg text-xs font-medium text-amber-600"><Clock className="w-3 h-3" />{slot.pendingCount}</span>)}
+                                                        {slot.rejectedCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 rounded-lg text-xs font-medium text-rose-600"><XCircle className="w-3 h-3" />{slot.rejectedCount}</span>)}
+                                                        {slot.cancelledCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-600"><XCircle className="w-3 h-3" />{slot.cancelledCount}</span>)}
+                                                        {slot.maintenanceCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 rounded-lg text-xs font-medium text-purple-600"><Wrench className="w-3 h-3" />{slot.maintenanceCount}</span>)}
                                                     </div>
                                                 )}
                                             </div>
@@ -638,45 +541,43 @@ const AdminBookingManagement = () => {
                                             <div className="p-4 space-y-3">
                                                 {slot.bookings.length > 0 ? (
                                                     slot.bookings.map(booking => (
-                                                        <div
-                                                            key={booking.id}
-                                                            className={`group bg-white rounded-lg border p-4 hover:shadow-md transition-all duration-200 ${slot.isPastSlot ? 'border-gray-100' : 'border-gray-100 hover:border-primary/20'}`}
-                                                        >
+                                                        <div key={booking.id} className={`group bg-white rounded-lg border p-4 hover:shadow-md transition-all duration-200 ${slot.isPastSlot ? 'border-gray-100' : 'border-gray-100 hover:border-primary/20'}`}>
                                                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                                                 <div className="flex-1">
                                                                     <div className="flex items-start gap-3">
-                                                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                                                            <User className="w-5 h-5 text-primary" />
-                                                                        </div>
+                                                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0"><User className="w-5 h-5 text-primary" /></div>
                                                                         <div className="flex-1">
                                                                             <div className="flex items-center gap-2 flex-wrap mb-1">
-                                                                                <h4 className="text-sm font-semibold text-text-primary">
-                                                                                    {booking.userFullName}
-                                                                                </h4>
-                                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(booking.status)}`}>
-                                                                                    {getStatusIcon(booking.status)}
-                                                                                    <span>{booking.status}</span>
-                                                                                </span>
+                                                                                <h4 className="text-sm font-semibold text-text-primary">{booking.userFullName}</h4>
+                                                                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getUserRoleBadge(booking.userRole)}`}>{booking.userRole}</span>
+                                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(booking.status)}`}>{getStatusIcon(booking.status)}<span>{booking.status}</span></span>
                                                                             </div>
-                                                                            <p className="text-xs text-text-secondary flex items-center gap-1 mb-2">
-                                                                                <Mail className="w-3 h-3" />
-                                                                                {booking.userEmail}
-                                                                            </p>
-                                                                            {booking.purpose && (
-                                                                                <div className="mt-2 p-2 bg-gray-50 rounded-lg">
-                                                                                    <p className="text-sm text-text-primary">
-                                                                                        📝 {booking.purpose}
-                                                                                    </p>
-                                                                                    {booking.expectedAttendees && (
-                                                                                        <p className="text-xs text-text-secondary mt-1">
-                                                                                            👥 {booking.expectedAttendees} attendees
-                                                                                        </p>
-                                                                                    )}
+                                                                            <p className="text-xs text-text-secondary flex items-center gap-1 mb-2"><Mail className="w-3 h-3" />{booking.userEmail}</p>
+
+                                                                            {/* Maintenance Request Badge and Details */}
+                                                                            {booking.bookingType === 'MAINTENANCE' && (
+                                                                                <div className="mt-2 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                                                                    <div className="flex items-center gap-2 mb-2">
+                                                                                        <Wrench className="w-4 h-4 text-purple-600" />
+                                                                                        <span className="text-xs font-bold text-purple-700 uppercase">Maintenance Request</span>
+                                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                                                                            booking.priority === 'CRITICAL' ? 'bg-red-200 text-red-800' :
+                                                                                                booking.priority === 'HIGH' ? 'bg-orange-200 text-orange-800' :
+                                                                                                    booking.priority === 'MEDIUM' ? 'bg-yellow-200 text-yellow-800' :
+                                                                                                        'bg-green-200 text-green-800'
+                                                                                        }`}>
+                                                                                            {booking.priority}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <p className="text-sm text-text-primary">{booking.issueDescription}</p>
                                                                                 </div>
                                                                             )}
-                                                                            <p className="text-xs text-text-secondary mt-2">
-                                                                                Requested: {format(new Date(booking.createdAt), 'MMM d, h:mm a')}
-                                                                            </p>
+
+                                                                            {booking.purpose && !booking.issueDescription && (
+                                                                                <div className="mt-2 p-2 bg-gray-50 rounded-lg"><p className="text-sm text-text-primary">📝 {booking.purpose}</p></div>
+                                                                            )}
+                                                                            {booking.expectedAttendees && (<p className="text-xs text-text-secondary mt-1">👥 {booking.expectedAttendees} attendees</p>)}
+                                                                            <p className="text-xs text-text-secondary mt-2">Requested: {format(new Date(booking.createdAt), 'MMM d, h:mm a')}</p>
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -685,39 +586,15 @@ const AdminBookingManagement = () => {
                                                                 <div className="flex items-center gap-2 md:border-l md:border-gray-100 md:pl-4">
                                                                     {booking.status === 'PENDING' && !slot.isPastSlot ? (
                                                                         <>
-                                                                            <button
-                                                                                onClick={() => openActionModal(booking, 'APPROVED')}
-                                                                                className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105 transition-all duration-200"
-                                                                                title="Approve Booking"
-                                                                            >
-                                                                                <CheckCircle className="w-5 h-5" />
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => openActionModal(booking, 'REJECTED')}
-                                                                                className="p-2.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105 transition-all duration-200"
-                                                                                title="Reject Booking"
-                                                                            >
-                                                                                <XCircle className="w-5 h-5" />
-                                                                            </button>
+                                                                            <button onClick={() => openActionModal(booking, 'APPROVED')} className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105 transition-all duration-200" title="Approve Booking"><CheckCircle className="w-5 h-5" /></button>
+                                                                            <button onClick={() => openActionModal(booking, 'REJECTED')} className="p-2.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105 transition-all duration-200" title="Reject Booking"><XCircle className="w-5 h-5" /></button>
                                                                         </>
                                                                     ) : (
                                                                         <div className="text-xs text-gray-400 px-2">
-                                                                            {booking.status === 'APPROVED' ? 'Approved' :
-                                                                                booking.status === 'REJECTED' ? 'Rejected' :
-                                                                                    booking.status === 'CANCELLED' ? 'Cancelled' :
-                                                                                        slot.isPastSlot ? 'Past Booking' : 'Completed'}
+                                                                            {booking.status === 'APPROVED' ? 'Approved' : booking.status === 'REJECTED' ? 'Rejected' : booking.status === 'CANCELLED' ? 'Cancelled' : slot.isPastSlot ? 'Past Booking' : 'Completed'}
                                                                         </div>
                                                                     )}
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            setSelectedBooking(booking);
-                                                                            setShowModal(true);
-                                                                        }}
-                                                                        className="p-2.5 rounded-xl bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-primary transition-all duration-200"
-                                                                        title="View Details"
-                                                                    >
-                                                                        <Eye className="w-5 h-5" />
-                                                                    </button>
+                                                                    <button onClick={() => { setSelectedBooking(booking); setShowModal(true); }} className="p-2.5 rounded-xl bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-primary transition-all duration-200" title="View Details"><Eye className="w-5 h-5" /></button>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -725,17 +602,7 @@ const AdminBookingManagement = () => {
                                                 ) : (
                                                     <div className="text-center py-6">
                                                         <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-full">
-                                                            {slot.isPastSlot ? (
-                                                                <>
-                                                                    <Clock className="w-4 h-4 text-gray-400" />
-                                                                    <span className="text-sm text-text-secondary">Past time slot - No bookings</span>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                                                    <span className="text-sm text-text-secondary">Available for booking</span>
-                                                                </>
-                                                            )}
+                                                            {slot.isPastSlot ? (<><Clock className="w-4 h-4 text-gray-400" /><span className="text-sm text-text-secondary">Past time slot - No bookings</span></>) : (<><CheckCircle className="w-4 h-4 text-green-500" /><span className="text-sm text-text-secondary">Available for booking</span></>)}
                                                         </div>
                                                     </div>
                                                 )}
@@ -747,16 +614,11 @@ const AdminBookingManagement = () => {
                         </div>
                     </div>
                 ) : (
-                    /* No Resource Selected Message */
                     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                         <div className="p-16 text-center">
-                            <div className="w-24 h-24 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl flex items-center justify-center mx-auto mb-5">
-                                <Calendar className="w-12 h-12 text-primary" />
-                            </div>
+                            <div className="w-24 h-24 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl flex items-center justify-center mx-auto mb-5"><Calendar className="w-12 h-12 text-primary" /></div>
                             <h3 className="text-xl font-bold text-text-primary mb-2">Select a Resource</h3>
-                            <p className="text-text-secondary max-w-md mx-auto">
-                                Choose a resource from the dropdown above to view and manage bookings in calendar view
-                            </p>
+                            <p className="text-text-secondary max-w-md mx-auto">Choose a resource from the dropdown above to view and manage bookings in calendar view</p>
                         </div>
                     </div>
                 )}
@@ -769,25 +631,12 @@ const AdminBookingManagement = () => {
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
                                 <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
                                     <div className="flex items-center gap-4">
-                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                                            adminAction.status === 'APPROVED' ? 'bg-emerald-100' :
-                                                adminAction.status === 'REJECTED' ? 'bg-rose-100' : 'bg-primary/10'
-                                        }`}>
-                                            {adminAction.status === 'APPROVED' ? (
-                                                <CheckCircle className="w-6 h-6 text-emerald-600" />
-                                            ) : adminAction.status === 'REJECTED' ? (
-                                                <XCircle className="w-6 h-6 text-rose-600" />
-                                            ) : (
-                                                <Eye className="w-6 h-6 text-primary" />
-                                            )}
+                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${adminAction.status === 'APPROVED' ? 'bg-emerald-100' : adminAction.status === 'REJECTED' ? 'bg-rose-100' : 'bg-primary/10'}`}>
+                                            {adminAction.status === 'APPROVED' ? (<CheckCircle className="w-6 h-6 text-emerald-600" />) : adminAction.status === 'REJECTED' ? (<XCircle className="w-6 h-6 text-rose-600" />) : (<Eye className="w-6 h-6 text-primary" />)}
                                         </div>
                                         <div>
-                                            <h3 className="text-xl font-bold text-text-primary">
-                                                {adminAction.status ? `${adminAction.status} Booking` : 'Booking Details'}
-                                            </h3>
-                                            <p className="text-sm text-text-secondary">
-                                                {selectedBooking.resourceName} • {selectedBooking.userFullName}
-                                            </p>
+                                            <h3 className="text-xl font-bold text-text-primary">{adminAction.status ? `${adminAction.status} Booking` : 'Booking Details'}</h3>
+                                            <p className="text-sm text-text-secondary">{selectedBooking.resourceName} • {selectedBooking.userFullName}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -795,90 +644,53 @@ const AdminBookingManagement = () => {
 
                             <div className="p-6 space-y-4">
                                 <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl">
-                                    <div>
-                                        <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Date</p>
-                                        <p className="text-base font-semibold text-text-primary mt-1">
-                                            {format(new Date(selectedBooking.bookingDate), 'MMMM d, yyyy')}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Time</p>
-                                        <p className="text-base font-semibold text-text-primary mt-1">
-                                            {selectedBooking.startTime} - {selectedBooking.endTime}
-                                        </p>
-                                    </div>
+                                    <div><p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Date</p><p className="text-base font-semibold text-text-primary mt-1">{format(new Date(selectedBooking.bookingDate), 'MMMM d, yyyy')}</p></div>
+                                    <div><p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Time</p><p className="text-base font-semibold text-text-primary mt-1">{selectedBooking.startTime} - {selectedBooking.endTime}</p></div>
                                 </div>
 
                                 <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
                                     <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-1">Purpose</p>
-                                    <p className="text-sm text-amber-800">
-                                        {selectedBooking.purpose || 'No purpose specified'}
-                                    </p>
+                                    <p className="text-sm text-amber-800">{selectedBooking.purpose || 'No purpose specified'}</p>
                                 </div>
 
-                                {selectedBooking.expectedAttendees && (
-                                    <div className="p-4 bg-gray-50 rounded-xl">
-                                        <p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">Expected Attendees</p>
-                                        <p className="text-sm text-text-primary">{selectedBooking.expectedAttendees} people</p>
+                                {selectedBooking.bookingType === 'MAINTENANCE' && selectedBooking.issueDescription && (
+                                    <div className="p-4 bg-purple-50 rounded-xl border border-purple-100">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Wrench className="w-4 h-4 text-purple-600" />
+                                            <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">Maintenance Request</p>
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                                selectedBooking.priority === 'CRITICAL' ? 'bg-red-200 text-red-800' :
+                                                    selectedBooking.priority === 'HIGH' ? 'bg-orange-200 text-orange-800' :
+                                                        selectedBooking.priority === 'MEDIUM' ? 'bg-yellow-200 text-yellow-800' :
+                                                            'bg-green-200 text-green-800'
+                                            }`}>{selectedBooking.priority}</span>
+                                        </div>
+                                        <p className="text-sm text-text-primary">{selectedBooking.issueDescription}</p>
                                     </div>
                                 )}
 
+                                {selectedBooking.expectedAttendees && (<div className="p-4 bg-gray-50 rounded-xl"><p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">Expected Attendees</p><p className="text-sm text-text-primary">{selectedBooking.expectedAttendees} people</p></div>)}
+
                                 {adminAction.status && (
                                     <div>
-                                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">
-                                            Reason {adminAction.status === 'REJECTED' ? '(Required)' : '(Optional)'}
-                                        </label>
-                                        <textarea
-                                            value={adminAction.reason}
-                                            onChange={(e) => setAdminAction({ ...adminAction, reason: e.target.value })}
-                                            rows="3"
-                                            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                            placeholder={adminAction.status === 'REJECTED' ?
-                                                "Please provide a reason for rejection..." :
-                                                "Add any additional notes (optional)"}
-                                            required={adminAction.status === 'REJECTED'}
-                                        />
+                                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Reason {adminAction.status === 'REJECTED' ? '(Required)' : '(Optional)'}</label>
+                                        <textarea value={adminAction.reason} onChange={(e) => setAdminAction({ ...adminAction, reason: e.target.value })} rows="3" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder={adminAction.status === 'REJECTED' ? "Please provide a reason for rejection..." : "Add any additional notes (optional)"} required={adminAction.status === 'REJECTED'} />
                                     </div>
                                 )}
 
                                 {!adminAction.status && selectedBooking.status === 'PENDING' && (
                                     <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-xl border border-amber-100">
                                         <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                                        <p className="text-sm text-amber-700">
-                                            This booking is pending approval. Approving this booking will automatically reject all other pending bookings for the same time slot.
-                                        </p>
+                                        <p className="text-sm text-amber-700">This booking is pending approval. Approving this booking will automatically reject all other pending bookings for the same time slot.</p>
                                     </div>
                                 )}
                             </div>
 
                             <div className="p-6 border-t border-gray-100 flex gap-3">
-                                <button
-                                    onClick={() => {
-                                        setShowModal(false);
-                                        setSelectedBooking(null);
-                                        setAdminAction({ status: '', reason: '' });
-                                    }}
-                                    className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"
-                                >
-                                    Cancel
-                                </button>
+                                <button onClick={() => { setShowModal(false); setSelectedBooking(null); setAdminAction({ status: '', reason: '' }); }} className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all">Cancel</button>
                                 {adminAction.status && (
-                                    <button
-                                        onClick={handleStatusUpdate}
-                                        disabled={processing || (adminAction.status === 'REJECTED' && !adminAction.reason)}
-                                        className={`
-                                            flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all
-                                            ${adminAction.status === 'APPROVED'
-                                            ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200'
-                                            : 'bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200'}
-                                            disabled:opacity-50 disabled:cursor-not-allowed
-                                        `}
-                                    >
-                                        {processing ? (
-                                            <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                                        ) : (
-                                            `Confirm ${adminAction.status}`
-                                        )}
+                                    <button onClick={handleStatusUpdate} disabled={processing || (adminAction.status === 'REJECTED' && !adminAction.reason)} className={`flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all ${adminAction.status === 'APPROVED' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200' : 'bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                                        {processing ? (<Loader2 className="w-5 h-5 animate-spin mx-auto" />) : (`Confirm ${adminAction.status}`)}
                                     </button>
                                 )}
                             </div>

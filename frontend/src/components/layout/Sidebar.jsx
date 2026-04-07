@@ -39,6 +39,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
         TECHNICIAN: [
             { icon: <LayoutDashboard size={20} />, label: 'Tech Console', path: '/technician' },
             { icon: <Wrench size={20} />, label: 'Maintenance', path: '/technician/maintenance' },
+            { icon: <Building size={20} />, label: 'Catalogue', path: '/resources' },
             { icon: <CalendarDays size={20} />, label: 'My Bookings', path: '/technician/my-bookings' },
             { icon: <HardHat size={20} />, label: 'Safety Logs', path: '/technician/safety' },
             { icon: <Leaf size={20} />, label: 'Environment', path: '/technician/environment' },

@@ -38,6 +38,8 @@ public class BookingServiceImpl implements BookingService {
     private static final LocalTime END_TIME = LocalTime.of(17, 0);
     private static final int SLOT_DURATION_HOURS = 1;
 
+    // In BookingServiceImpl.java, update the createBooking method to handle maintenance requests
+
     @Override
     @Transactional
     public BookingResponse createBooking(BookingCreateRequest request, String userEmail) {
@@ -61,7 +63,6 @@ public class BookingServiceImpl implements BookingService {
         validateBookingDateTime(request.getBookingDate(), request.getStartTime());
 
         // Check for conflicts - ONLY with APPROVED bookings
-        // Pending bookings do NOT block new bookings from other users
         List<Booking> overlappingApproved = bookingRepository.findOverlappingApprovedBookings(
                 request.getResourceId(), request.getBookingDate(),
                 request.getStartTime(), request.getEndTime());
@@ -89,10 +90,7 @@ public class BookingServiceImpl implements BookingService {
             throw new InvalidBookingException("You already have an approved booking for this time slot");
         }
 
-        // DIFFERENT USERS CAN BOOK THE SAME PENDING SLOT
-        // No check for other users' pending bookings - this allows multiple users to request the same slot
-
-        // Create booking
+        // Create booking with maintenance fields
         Booking booking = Booking.builder()
                 .resourceId(request.getResourceId())
                 .userId(user.getId())
@@ -102,24 +100,16 @@ public class BookingServiceImpl implements BookingService {
                 .purpose(request.getPurpose())
                 .expectedAttendees(request.getExpectedAttendees())
                 .status(BookingStatus.PENDING)
+                .bookingType(request.getBookingType() != null ? request.getBookingType() : "REGULAR")
+                .issueDescription(request.getIssueDescription())
+                .priority(request.getPriority())
                 .build();
 
-        // Try to save - if there's a duplicate key error, catch it and handle gracefully
-        Booking saved;
-        try {
-            saved = bookingRepository.save(booking);
-        } catch (Exception e) {
-            log.error("Failed to save booking: {}", e.getMessage());
-            if (e.getMessage().contains("duplicate key") || e.getMessage().contains("unique")) {
-                throw new InvalidBookingException("This time slot is already booked. Please choose a different time.");
-            }
-            throw new InvalidBookingException("Failed to create booking: " + e.getMessage());
-        }
-
+        Booking saved = bookingRepository.save(booking);
         log.info("Booking created: {} for resource {} by user {}",
                 saved.getId(), resource.getName(), user.getEmail());
 
-        // Get count of pending bookings for this slot (including this new one)
+        // Get count of pending bookings for this slot
         long pendingCount = bookingRepository.countPendingBookingsForSlot(
                 request.getResourceId(),
                 request.getBookingDate(),
@@ -130,14 +120,35 @@ public class BookingServiceImpl implements BookingService {
                 pendingCount, request.getStartTime(), request.getBookingDate());
 
         // Send notification to user
+        String notificationType = "MAINTENANCE_REQUEST".equals(request.getBookingType()) ?
+                "MAINTENANCE_REQUEST_SUBMITTED" : "BOOKING_CREATED";
+
         notificationService.sendNotification(
                 user.getId(),
-                "Booking Request Submitted",
-                String.format("Your booking request for %s on %s at %s-%s has been submitted and is pending approval. There are currently %d pending request(s) for this slot.",
+                "MAINTENANCE_REQUEST".equals(request.getBookingType()) ?
+                        "Maintenance Request Submitted" : "Booking Request Submitted",
+                String.format("Your %s for %s on %s at %s-%s has been submitted and is pending approval.",
+                        "MAINTENANCE_REQUEST".equals(request.getBookingType()) ? "maintenance request" : "booking request",
                         resource.getName(), request.getBookingDate(),
-                        request.getStartTime(), request.getEndTime(), pendingCount),
-                "BOOKING_CREATED"
+                        request.getStartTime(), request.getEndTime()),
+                notificationType
         );
+
+        // If maintenance request, also notify admins
+        if ("MAINTENANCE".equals(request.getBookingType())) {
+            List<User> admins = userRepository.findByRole(Role.ADMIN);
+            for (User admin : admins) {
+                notificationService.sendNotification(
+                        admin.getId(),
+                        "🔧 New Maintenance Request",
+                        String.format("Technician %s has submitted a maintenance request for %s on %s at %s-%s. Priority: %s\nIssue: %s",
+                                user.getFullName(), resource.getName(), request.getBookingDate(),
+                                request.getStartTime(), request.getEndTime(),
+                                request.getPriority(), request.getIssueDescription()),
+                        "MAINTENANCE_REQUEST"
+                );
+            }
+        }
 
         return mapToResponse(saved, resource, user);
     }
@@ -603,6 +614,8 @@ public class BookingServiceImpl implements BookingService {
         }
     }
 
+    // Update the mapToResponse method to include maintenance fields and user role
+
     private BookingResponse mapToResponse(Booking booking, Resource resource, User user) {
         return BookingResponse.builder()
                 .id(booking.getId())
@@ -611,6 +624,7 @@ public class BookingServiceImpl implements BookingService {
                 .userId(booking.getUserId())
                 .userFullName(user != null ? user.getFullName() : null)
                 .userEmail(user != null ? user.getEmail() : null)
+                .userRole(user != null ? user.getRole().name() : null)
                 .bookingDate(booking.getBookingDate())
                 .startTime(booking.getStartTime())
                 .endTime(booking.getEndTime())
@@ -620,6 +634,9 @@ public class BookingServiceImpl implements BookingService {
                 .adminReason(booking.getAdminReason())
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
+                .bookingType(booking.getBookingType())
+                .issueDescription(booking.getIssueDescription())
+                .priority(booking.getPriority())
                 .build();
     }
 }

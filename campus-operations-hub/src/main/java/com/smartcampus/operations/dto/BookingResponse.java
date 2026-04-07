@@ -32,4 +32,8 @@ public class BookingResponse {
     private String adminReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String bookingType;
+    private String issueDescription;
+    private String priority;
+    private String userRole;
 }
