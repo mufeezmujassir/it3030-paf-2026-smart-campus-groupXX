@@ -15,4 +15,6 @@ public class MaintenanceActionDTO {
     private MaintenanceStatus status;
 
     private String notes;
+
+    private Integer estimatedHours;
 }

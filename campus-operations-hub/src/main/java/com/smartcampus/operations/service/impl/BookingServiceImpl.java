@@ -56,6 +56,20 @@ public class BookingServiceImpl implements BookingService {
             throw new InvalidBookingException("Resource is currently unavailable for booking");
         }
 
+        // Check if resource is in maintenance mode
+        if (resource.getMaintenanceMode() != null && resource.getMaintenanceMode()) {
+            LocalDate bookingDate = request.getBookingDate();
+            LocalDate maintenanceStart = resource.getMaintenanceStartDate();
+            LocalDate maintenanceEnd = resource.getMaintenanceEndDate();
+
+            if (maintenanceStart != null && maintenanceEnd != null &&
+                    !bookingDate.isBefore(maintenanceStart) && !bookingDate.isAfter(maintenanceEnd)) {
+                throw new InvalidBookingException(
+                        String.format("This resource is under maintenance from %s to %s. Bookings are not allowed during this period.",
+                                maintenanceStart, maintenanceEnd));
+            }
+        }
+
         // Validate booking time
         validateBookingTime(request.getStartTime(), request.getEndTime());
 
@@ -452,6 +466,33 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public AvailableTimeSlotsResponse getAvailableTimeSlots(UUID resourceId, LocalDate date) {
+        Resource resource = resourceRepository.findById(resourceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
+
+        // Check if resource is in maintenance mode for this date
+        boolean isUnderMaintenance = false;
+        String maintenanceReason = null;
+        LocalDate maintenanceEndDate = null;
+
+        if (resource.getMaintenanceMode() != null && resource.getMaintenanceMode() &&
+                resource.getMaintenanceStartDate() != null && resource.getMaintenanceEndDate() != null) {
+            isUnderMaintenance = !date.isBefore(resource.getMaintenanceStartDate()) &&
+                    !date.isAfter(resource.getMaintenanceEndDate());
+            maintenanceReason = resource.getMaintenanceReason();
+            maintenanceEndDate = resource.getMaintenanceEndDate();
+        }
+
+        if (isUnderMaintenance) {
+            // Return empty slots with maintenance info
+            return AvailableTimeSlotsResponse.builder()
+                    .availableSlots(new ArrayList<>())
+                    .bookedSlots(new ArrayList<>())
+                    .isUnderMaintenance(true)
+                    .maintenanceReason(maintenanceReason)
+                    .maintenanceEndDate(maintenanceEndDate)
+                    .build();
+        }
+
         // Get all bookings for this resource on this date
         List<Booking> bookings = bookingRepository.findBookingsByResourceAndDate(resourceId, date);
 
@@ -508,7 +549,6 @@ public class BookingServiceImpl implements BookingService {
                         .status(BookingStatus.APPROVED)
                         .build());
             } else if (hasPending) {
-                // Show pending status with count
                 bookedSlots.add(AvailableTimeSlotsResponse.BookedSlot.builder()
                         .startTime(finalCurrent)
                         .endTime(finalSlotEnd)
@@ -522,6 +562,7 @@ public class BookingServiceImpl implements BookingService {
         return AvailableTimeSlotsResponse.builder()
                 .availableSlots(allSlots)
                 .bookedSlots(bookedSlots)
+                .isUnderMaintenance(false)
                 .build();
     }
 

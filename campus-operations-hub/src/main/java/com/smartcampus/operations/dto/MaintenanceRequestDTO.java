@@ -29,7 +29,11 @@ public class MaintenanceRequestDTO {
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;
     private Integer extensionRequested;
+    private String extensionReason;
     private String adminNotes;
+    private Integer estimatedHours;
+    private Integer actualHours;
+    private String technicianNotes;
     private LocalDate bookingDate;
     private LocalTime startTime;
     private LocalTime endTime;

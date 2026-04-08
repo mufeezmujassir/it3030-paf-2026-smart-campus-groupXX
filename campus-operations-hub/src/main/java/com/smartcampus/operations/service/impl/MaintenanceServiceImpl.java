@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -33,53 +34,88 @@ public class MaintenanceServiceImpl implements MaintenanceService {
     @Override
     @Transactional
     public MaintenanceRequestDTO startMaintenance(UUID bookingId, String technicianEmail) {
+        System.out.println("MaintenanceServiceImpl.startMaintenance called for booking: " + bookingId);
+
         User technician = userRepository.findByEmail(technicianEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Technician not found"));
 
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
 
-        // Verify booking is approved and is maintenance type
+        System.out.println("Found booking - ID: " + booking.getId() +
+                ", Status: " + booking.getStatus() +
+                ", Type: " + booking.getBookingType());
+
         if (booking.getStatus() != BookingStatus.APPROVED) {
-            throw new InvalidBookingException("Only approved bookings can be started for maintenance");
+            throw new InvalidBookingException("Only approved bookings can be started for maintenance. Current status: " + booking.getStatus());
         }
         if (!"MAINTENANCE".equals(booking.getBookingType())) {
-            throw new InvalidBookingException("This is not a maintenance request");
+            throw new InvalidBookingException("This is not a maintenance request. Booking type: " + booking.getBookingType());
         }
 
-        // Check if maintenance request already exists
-        MaintenanceRequest existingRequest = maintenanceRequestRepository.findByBookingId(bookingId).orElse(null);
-        MaintenanceRequest maintenanceRequest;
+        Resource resource = resourceRepository.findById(booking.getResourceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
 
-        if (existingRequest == null) {
-            // Create new maintenance request
+        // Create maintenance request if it doesn't exist
+        MaintenanceRequest maintenanceRequest = maintenanceRequestRepository.findByBookingId(bookingId).orElse(null);
+
+        if (maintenanceRequest == null) {
             maintenanceRequest = MaintenanceRequest.builder()
                     .bookingId(bookingId)
                     .technicianId(technician.getId())
-                    .issueDescription(booking.getIssueDescription())
-                    .priority(booking.getPriority())
+                    .issueDescription(booking.getIssueDescription() != null ? booking.getIssueDescription() : "No description provided")
+                    .priority(booking.getPriority() != null ? booking.getPriority() : "MEDIUM")
                     .maintenanceStatus(MaintenanceStatus.IN_PROGRESS)
                     .startedAt(LocalDateTime.now())
+                    .estimatedHours(booking.getExpectedAttendees() != null ? booking.getExpectedAttendees() : null)
                     .build();
         } else {
-            // Update existing request
-            maintenanceRequest = existingRequest;
             maintenanceRequest.setMaintenanceStatus(MaintenanceStatus.IN_PROGRESS);
             maintenanceRequest.setStartedAt(LocalDateTime.now());
         }
 
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenanceRequest);
-        log.info("Maintenance started for booking {} by technician {}", bookingId, technicianEmail);
+        System.out.println("Maintenance request saved with ID: " + saved.getId() + ", Status: " + saved.getMaintenanceStatus());
 
-        // Notify admin
+        // Put resource into maintenance mode
+        resource.setMaintenanceMode(true);
+        resource.setMaintenanceStartDate(booking.getBookingDate());
+        resource.setMaintenanceEndDate(booking.getBookingDate());
+        resource.setMaintenanceReason(booking.getIssueDescription());
+        resourceRepository.save(resource);
+
+        log.info("Maintenance started for booking {} by technician {}, resource {} put into maintenance mode",
+                bookingId, technicianEmail, resource.getName());
+
+        // Find and notify users with approved bookings during maintenance period
+        List<Booking> conflictingBookings = bookingRepository.findAll().stream()
+                .filter(b -> b.getResourceId().equals(booking.getResourceId()))
+                .filter(b -> b.getStatus() == BookingStatus.APPROVED)
+                .filter(b -> !b.getId().equals(bookingId))
+                .filter(b -> b.getBookingDate().equals(booking.getBookingDate()))
+                .collect(Collectors.toList());
+
+        for (Booking conflicting : conflictingBookings) {
+            User conflictingUser = userRepository.findById(conflicting.getUserId()).orElse(null);
+            if (conflictingUser != null) {
+                notificationService.sendNotification(
+                        conflictingUser.getId(),
+                        "⚠️ Booking Affected by Maintenance",
+                        String.format("Your approved booking for %s on %s at %s-%s has been affected by an urgent maintenance request. The resource is now under maintenance. Please contact support or cancel your booking.",
+                                resource.getName(), conflicting.getBookingDate(),
+                                conflicting.getStartTime(), conflicting.getEndTime()),
+                        "MAINTENANCE_AFFECTED"
+                );
+            }
+        }
+
         List<User> admins = userRepository.findByRole(Role.ADMIN);
-        Resource resource = resourceRepository.findById(booking.getResourceId()).orElse(null);
         for (User admin : admins) {
             notificationService.sendNotification(
                     admin.getId(),
                     "🔧 Maintenance Started",
-                    String.format("Technician %s has started maintenance for %s",
-                            technician.getFullName(), resource != null ? resource.getName() : "Resource"),
+                    String.format("Technician %s has started maintenance for %s. Resource is now in maintenance mode.",
+                            technician.getFullName(), resource.getName()),
                     "MAINTENANCE_STARTED"
             );
         }
@@ -105,19 +141,53 @@ public class MaintenanceServiceImpl implements MaintenanceService {
 
         maintenanceRequest.setMaintenanceStatus(MaintenanceStatus.COMPLETED);
         maintenanceRequest.setCompletedAt(LocalDateTime.now());
+
+        // Calculate actual hours if estimated hours were set
+        if (maintenanceRequest.getStartedAt() != null) {
+            long actualHours = java.time.Duration.between(maintenanceRequest.getStartedAt(), LocalDateTime.now()).toHours();
+            maintenanceRequest.setActualHours((int) actualHours);
+        }
+
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenanceRequest);
 
-        log.info("Maintenance completed for booking {} by technician {}", bookingId, technicianEmail);
+        // Take resource out of maintenance mode
+        Resource resource = resourceRepository.findById(booking.getResourceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
+        resource.setMaintenanceMode(false);
+        resource.setMaintenanceStartDate(null);
+        resource.setMaintenanceEndDate(null);
+        resource.setMaintenanceReason(null);
+        resourceRepository.save(resource);
 
-        // Notify admin
+        log.info("Maintenance completed for booking {} by technician {}, resource {} taken out of maintenance mode",
+                bookingId, technicianEmail, resource.getName());
+
+        // Notify users that resource is available again
+        List<Booking> affectedBookings = bookingRepository.findAll().stream()
+                .filter(b -> b.getResourceId().equals(booking.getResourceId()))
+                .filter(b -> b.getStatus() == BookingStatus.APPROVED || b.getStatus() == BookingStatus.PENDING)
+                .collect(Collectors.toList());
+
+        for (Booking affected : affectedBookings) {
+            User affectedUser = userRepository.findById(affected.getUserId()).orElse(null);
+            if (affectedUser != null && !affected.getId().equals(bookingId)) {
+                notificationService.sendNotification(
+                        affectedUser.getId(),
+                        "✅ Resource Available Again",
+                        String.format("Maintenance has been completed for %s. Your booking status remains unchanged.",
+                                resource.getName()),
+                        "MAINTENANCE_COMPLETED"
+                );
+            }
+        }
+
         List<User> admins = userRepository.findByRole(Role.ADMIN);
-        Resource resource = resourceRepository.findById(booking.getResourceId()).orElse(null);
         for (User admin : admins) {
             notificationService.sendNotification(
                     admin.getId(),
                     "✅ Maintenance Completed",
-                    String.format("Technician %s has completed maintenance for %s",
-                            technician.getFullName(), resource != null ? resource.getName() : "Resource"),
+                    String.format("Technician %s has completed maintenance for %s. Resource is now available.",
+                            technician.getFullName(), resource.getName()),
                     "MAINTENANCE_COMPLETED"
             );
         }
@@ -141,23 +211,52 @@ public class MaintenanceServiceImpl implements MaintenanceService {
             throw new InvalidBookingException("Extension can only be requested for maintenance in progress");
         }
 
+        Resource resource = resourceRepository.findById(booking.getResourceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
+
+        LocalDate newEndDate = resource.getMaintenanceEndDate().plusDays(days);
+        resource.setMaintenanceEndDate(newEndDate);
+        resourceRepository.save(resource);
+
         maintenanceRequest.setExtensionRequested(days);
+        maintenanceRequest.setExtensionReason("Technician requested " + days + " day extension");
         maintenanceRequest.setMaintenanceStatus(MaintenanceStatus.EXTENSION_REQUESTED);
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenanceRequest);
 
-        log.info("Extension requested for booking {}: {} days by technician {}", bookingId, days, technicianEmail);
+        log.info("Extension requested for booking {}: {} days by technician {}, maintenance extended to {}",
+                bookingId, days, technicianEmail, newEndDate);
 
-        // Notify admins about extension request
         List<User> admins = userRepository.findByRole(Role.ADMIN);
-        Resource resource = resourceRepository.findById(booking.getResourceId()).orElse(null);
         for (User admin : admins) {
             notificationService.sendNotification(
                     admin.getId(),
                     "🔄 Maintenance Extension Request",
-                    String.format("Technician %s requests %d additional days for maintenance of %s",
-                            technician.getFullName(), days, resource != null ? resource.getName() : "Resource"),
+                    String.format("Technician %s requests %d additional days for maintenance of %s. New end date: %s",
+                            technician.getFullName(), days, resource.getName(), newEndDate),
                     "MAINTENANCE_EXTENSION_REQUEST"
             );
+        }
+
+        // Notify affected users about extended maintenance
+        List<Booking> affectedBookings = bookingRepository.findAll().stream()
+                .filter(b -> b.getResourceId().equals(booking.getResourceId()))
+                .filter(b -> b.getStatus() == BookingStatus.APPROVED)
+                .filter(b -> !b.getId().equals(bookingId))
+                .filter(b -> b.getBookingDate().isAfter(resource.getMaintenanceStartDate()) &&
+                        b.getBookingDate().isBefore(newEndDate))
+                .collect(Collectors.toList());
+
+        for (Booking affected : affectedBookings) {
+            User affectedUser = userRepository.findById(affected.getUserId()).orElse(null);
+            if (affectedUser != null) {
+                notificationService.sendNotification(
+                        affectedUser.getId(),
+                        "⚠️ Maintenance Extended",
+                        String.format("Maintenance for %s has been extended to %s. Please check your bookings.",
+                                resource.getName(), newEndDate),
+                        "MAINTENANCE_EXTENDED"
+                );
+            }
         }
 
         return mapToDTO(saved, booking, technician);
@@ -189,7 +288,21 @@ public class MaintenanceServiceImpl implements MaintenanceService {
         log.info("Maintenance request {} status updated to {} by admin {}",
                 maintenanceId, action.getStatus(), adminEmail);
 
-        // Notify technician
+        if (action.getStatus() == MaintenanceStatus.APPROVED) {
+            Booking booking = bookingRepository.findById(maintenanceRequest.getBookingId()).orElse(null);
+            if (booking != null) {
+                Resource resource = resourceRepository.findById(booking.getResourceId()).orElse(null);
+                if (resource != null) {
+                    resource.setMaintenanceMode(true);
+                    resource.setMaintenanceStartDate(booking.getBookingDate());
+                    resource.setMaintenanceEndDate(booking.getBookingDate());
+                    resource.setMaintenanceReason(maintenanceRequest.getIssueDescription());
+                    resourceRepository.save(resource);
+                    handleConflictingBookings(resource, booking);
+                }
+            }
+        }
+
         User technician = userRepository.findById(maintenanceRequest.getTechnicianId()).orElse(null);
         if (technician != null) {
             notificationService.sendNotification(
@@ -203,6 +316,29 @@ public class MaintenanceServiceImpl implements MaintenanceService {
 
         Booking booking = bookingRepository.findById(maintenanceRequest.getBookingId()).orElse(null);
         return mapToDTO(saved, booking, technician);
+    }
+
+    private void handleConflictingBookings(Resource resource, Booking maintenanceBooking) {
+        List<Booking> conflictingBookings = bookingRepository.findAll().stream()
+                .filter(b -> b.getResourceId().equals(resource.getId()))
+                .filter(b -> b.getStatus() == BookingStatus.APPROVED)
+                .filter(b -> !b.getId().equals(maintenanceBooking.getId()))
+                .filter(b -> b.getBookingDate().equals(maintenanceBooking.getBookingDate()))
+                .collect(Collectors.toList());
+
+        for (Booking conflicting : conflictingBookings) {
+            User conflictingUser = userRepository.findById(conflicting.getUserId()).orElse(null);
+            if (conflictingUser != null) {
+                notificationService.sendNotification(
+                        conflictingUser.getId(),
+                        "⚠️ Booking Affected by Maintenance",
+                        String.format("Your approved booking for %s on %s at %s-%s has been affected by an urgent maintenance request. The resource is now under maintenance. Please contact support or cancel your booking.",
+                                resource.getName(), conflicting.getBookingDate(),
+                                conflicting.getStartTime(), conflicting.getEndTime()),
+                        "MAINTENANCE_AFFECTED"
+                );
+            }
+        }
     }
 
     private MaintenanceRequestDTO mapToDTO(MaintenanceRequest request, Booking booking, User technician) {
@@ -221,7 +357,11 @@ public class MaintenanceServiceImpl implements MaintenanceService {
                 .startedAt(request.getStartedAt())
                 .completedAt(request.getCompletedAt())
                 .extensionRequested(request.getExtensionRequested())
+                .extensionReason(request.getExtensionReason())
                 .adminNotes(request.getAdminNotes())
+                .estimatedHours(request.getEstimatedHours())
+                .actualHours(request.getActualHours())
+                .technicianNotes(request.getTechnicianNotes())
                 .bookingDate(booking != null ? booking.getBookingDate() : null)
                 .startTime(booking != null ? booking.getStartTime() : null)
                 .endTime(booking != null ? booking.getEndTime() : null)

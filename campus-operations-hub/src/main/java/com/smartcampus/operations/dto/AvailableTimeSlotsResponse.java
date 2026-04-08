@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 
@@ -17,6 +18,9 @@ import java.util.List;
 public class AvailableTimeSlotsResponse {
     private List<TimeSlot> availableSlots;
     private List<BookedSlot> bookedSlots;
+    private boolean isUnderMaintenance;
+    private String maintenanceReason;
+    private LocalDate maintenanceEndDate;
 
     @Data
     @Builder

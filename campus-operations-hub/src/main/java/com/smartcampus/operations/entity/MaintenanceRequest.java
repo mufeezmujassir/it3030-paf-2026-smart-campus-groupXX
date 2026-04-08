@@ -45,8 +45,20 @@ public class MaintenanceRequest {
     @Column(name = "extension_requested")
     private Integer extensionRequested;
 
+    @Column(name = "extension_reason", length = 500)
+    private String extensionReason;
+
     @Column(name = "admin_notes", length = 500)
     private String adminNotes;
+
+    @Column(name = "estimated_hours")
+    private Integer estimatedHours;
+
+    @Column(name = "actual_hours")
+    private Integer actualHours;
+
+    @Column(name = "technician_notes", length = 500)
+    private String technicianNotes;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

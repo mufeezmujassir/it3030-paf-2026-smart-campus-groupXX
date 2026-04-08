@@ -22,38 +22,37 @@ public class MaintenanceController {
 
     private final MaintenanceService maintenanceService;
 
-    // Start maintenance (technician)
-    @PostMapping("/{bookingId}/start-maintenance")
+    @PostMapping("/{bookingId}/start")
     @PreAuthorize("hasRole('TECHNICIAN')")
     public ResponseEntity<MaintenanceRequestDTO> startMaintenance(
             @PathVariable UUID bookingId,
             @AuthenticationPrincipal UserDetails userDetails) {
+        System.out.println("Starting maintenance for booking: " + bookingId);
         MaintenanceRequestDTO response = maintenanceService.startMaintenance(bookingId, userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
 
-    // Complete maintenance (technician)
-    @PostMapping("/{bookingId}/complete-maintenance")
+    @PostMapping("/{bookingId}/complete")
     @PreAuthorize("hasRole('TECHNICIAN')")
     public ResponseEntity<MaintenanceRequestDTO> completeMaintenance(
             @PathVariable UUID bookingId,
             @AuthenticationPrincipal UserDetails userDetails) {
+        System.out.println("Completing maintenance for booking: " + bookingId);
         MaintenanceRequestDTO response = maintenanceService.completeMaintenance(bookingId, userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
 
-    // Request extension (technician)
-    @PostMapping("/{bookingId}/request-extension")
+    @PostMapping("/{bookingId}/extend")
     @PreAuthorize("hasRole('TECHNICIAN')")
     public ResponseEntity<MaintenanceRequestDTO> requestExtension(
             @PathVariable UUID bookingId,
             @RequestParam int days,
             @AuthenticationPrincipal UserDetails userDetails) {
+        System.out.println("Requesting extension for booking: " + bookingId + " days: " + days);
         MaintenanceRequestDTO response = maintenanceService.requestExtension(bookingId, days, userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
 
-    // Get technician's maintenance requests
     @GetMapping("/my-requests")
     @PreAuthorize("hasRole('TECHNICIAN')")
     public ResponseEntity<List<MaintenanceRequestDTO>> getMyMaintenanceRequests(
@@ -62,7 +61,6 @@ public class MaintenanceController {
         return ResponseEntity.ok(response);
     }
 
-    // Update maintenance status (admin)
     @PatchMapping("/admin/{maintenanceId}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<MaintenanceRequestDTO> updateMaintenanceStatus(

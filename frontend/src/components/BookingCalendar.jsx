@@ -174,7 +174,6 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
             const formattedDate = formatDate(selectedDate);
 
             const today = new Date();
-            const bookingDate = new Date(formattedDate);
             const now = new Date();
             const bookingStartTime = selectedSlot.startTime;
 
@@ -197,13 +196,19 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                 expectedAttendees: expectedAttendees ? parseInt(expectedAttendees) : null
             };
 
+            // IMPORTANT: Set bookingType to "MAINTENANCE" for technicians
             if (userRole === 'TECHNICIAN' && bookingType === 'MAINTENANCE') {
                 bookingData.bookingType = 'MAINTENANCE';
                 bookingData.issueDescription = issueDescription;
                 bookingData.priority = priority;
+                console.log('Submitting MAINTENANCE request:', bookingData);
+            } else {
+                bookingData.bookingType = 'REGULAR';
+                console.log('Submitting REGULAR booking:', bookingData);
             }
 
-            await bookingService.createBooking(bookingData);
+            const response = await bookingService.createBooking(bookingData);
+            console.log('Booking response:', response);
 
             toast.success(bookingType === 'MAINTENANCE' ?
                 'Maintenance request submitted! Waiting for admin approval.' :
@@ -221,6 +226,7 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
 
             if (onBookingCreated) onBookingCreated();
         } catch (error) {
+            console.error('Booking error:', error);
             const message = error.response?.data?.message || 'Failed to create booking';
             toast.error(message);
         } finally {
