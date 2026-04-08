@@ -327,11 +327,11 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<BookingResponse> getUserBookings(String userEmail, String status, Pageable pageable) {
+    public Page<BookingResponse> getUserBookings(String userEmail, String status, String bookingType, Pageable pageable) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        log.info("Fetching user bookings for email: {}, status: {}, pageable: {}", userEmail, status, pageable);
+        log.info("Fetching user bookings for email: {}, status: {}, bookingType: {}, pageable: {}", userEmail, status, bookingType, pageable);
 
         // Convert status to enum
         BookingStatus bookingStatus = null;
@@ -344,11 +344,22 @@ public class BookingServiceImpl implements BookingService {
         }
 
         Page<Booking> bookingPage;
-        if (bookingStatus != null) {
-            // Filter by status
+
+        if (bookingStatus != null && bookingType != null && !bookingType.trim().isEmpty()) {
+            // Filter by both status and booking type
+            bookingPage = bookingRepository.findByUserIdAndStatusAndBookingTypeOrderByBookingDateDescStartTimeDesc(
+                    user.getId(), bookingStatus, bookingType, pageable);
+            log.info("Filtering by status: {} and bookingType: {}", bookingStatus, bookingType);
+        } else if (bookingStatus != null) {
+            // Filter by status only
             bookingPage = bookingRepository.findByUserIdAndStatusOrderByBookingDateDescStartTimeDesc(
                     user.getId(), bookingStatus, pageable);
             log.info("Filtering by status: {}", bookingStatus);
+        } else if (bookingType != null && !bookingType.trim().isEmpty()) {
+            // Filter by booking type only
+            bookingPage = bookingRepository.findByUserIdAndBookingTypeOrderByBookingDateDescStartTimeDesc(
+                    user.getId(), bookingType, pageable);
+            log.info("Filtering by bookingType: {}", bookingType);
         } else {
             // No status filter - get all bookings
             bookingPage = bookingRepository.findByUserIdOrderByBookingDateDescStartTimeDesc(user.getId(), pageable);

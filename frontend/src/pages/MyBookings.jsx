@@ -47,9 +47,14 @@ const MyBookings = () => {
             if (selectedStatus && selectedStatus !== '') {
                 params.status = selectedStatus;
             }
+            // Only fetch REGULAR bookings (not maintenance)
+            params.bookingType = 'REGULAR';
+
             const data = await bookingService.getMyBookings(params);
             const bookingsData = data.content || data;
-            setBookings(bookingsData);
+            // Filter out any maintenance bookings just in case
+            const regularBookings = bookingsData.filter(b => b.bookingType !== 'MAINTENANCE');
+            setBookings(regularBookings);
         } catch (error) {
             console.error('Failed to load bookings:', error);
             toast.error('Failed to load your bookings');

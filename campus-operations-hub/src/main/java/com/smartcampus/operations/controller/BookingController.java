@@ -40,9 +40,10 @@ public class BookingController {
     public ResponseEntity<Page<BookingResponse>> getMyBookings(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String bookingType,
             @PageableDefault(size = 20, sort = "bookingDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        System.out.println("Fetching user bookings with status: " + status);
-        return ResponseEntity.ok(bookingService.getUserBookings(userDetails.getUsername(), status, pageable));
+        System.out.println("Fetching user bookings with status: " + status + ", bookingType: " + bookingType);
+        return ResponseEntity.ok(bookingService.getUserBookings(userDetails.getUsername(), status, bookingType, pageable));
     }
 
     @GetMapping("/{id}")
