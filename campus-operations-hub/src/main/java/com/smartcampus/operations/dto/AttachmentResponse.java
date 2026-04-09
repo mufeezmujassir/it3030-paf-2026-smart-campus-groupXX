@@ -15,5 +15,6 @@ public class AttachmentResponse {
     private String fileName;
     private String fileType;
     private Long fileSize;
+    private String base64Data;
     private LocalDateTime uploadedAt;
 }

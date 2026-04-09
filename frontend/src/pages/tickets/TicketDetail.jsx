@@ -661,10 +661,19 @@ const TicketDetail = () => {
                             <div className="space-y-2">
                                 {ticket.attachments?.map(att => (
                                     <div key={att.id}
-                                         className="flex items-center justify-between px-3 py-2 rounded-xl border group"
+                                         className="rounded-xl border overflow-hidden group"
                                          style={{ backgroundColor: 'var(--color-background)', borderColor: '#E8D5C4' }}>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-sm">🖼️</span>
+                                        {att.base64Data && (
+                                            <a href={att.base64Data} target="_blank" rel="noopener noreferrer">
+                                                <img
+                                                    src={att.base64Data}
+                                                    alt={att.fileName}
+                                                    className="w-full h-32 object-cover hover:opacity-90 transition"
+                                                    onError={e => { e.target.style.display = 'none'; }}
+                                                />
+                                            </a>
+                                        )}
+                                        <div className="flex items-center justify-between px-3 py-2">
                                             <div>
                                                 <p className="text-xs font-medium truncate max-w-28"
                                                    style={{ color: 'var(--color-text-primary)' }}>
@@ -674,13 +683,13 @@ const TicketDetail = () => {
                                                     {(att.fileSize / 1024).toFixed(1)} KB
                                                 </p>
                                             </div>
+                                            {(isAdmin || isOwner) && (
+                                                <button onClick={() => handleAttachmentDelete(att.id)}
+                                                        className="text-red-400 hover:text-red-600 transition text-lg leading-none">
+                                                    ×
+                                                </button>
+                                            )}
                                         </div>
-                                        {(isAdmin || isOwner) && (
-                                            <button onClick={() => handleAttachmentDelete(att.id)}
-                                                    className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition text-lg leading-none">
-                                                ×
-                                            </button>
-                                        )}
                                     </div>
                                 ))}
                             </div>

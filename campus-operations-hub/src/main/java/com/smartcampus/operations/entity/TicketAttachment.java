@@ -26,14 +26,15 @@ public class TicketAttachment {
     @Column(name = "file_name", nullable = false, length = 255)
     private String fileName;
 
-    @Column(name = "file_path", nullable = false, length = 500)
-    private String filePath;
-
     @Column(name = "file_type", length = 100)
     private String fileType;
 
     @Column(name = "file_size")
     private Long fileSize;
+
+    @Lob
+    @Column(name = "data", nullable = false, columnDefinition = "BYTEA")
+    private byte[] data;
 
     @Column(name = "uploaded_at", updatable = false)
     private LocalDateTime uploadedAt;

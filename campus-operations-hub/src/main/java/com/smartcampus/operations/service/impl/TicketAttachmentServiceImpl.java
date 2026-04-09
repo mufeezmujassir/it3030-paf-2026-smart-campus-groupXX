@@ -13,16 +13,12 @@ import com.smartcampus.operations.repository.TicketAttachmentRepository;
 import com.smartcampus.operations.repository.UserRepository;
 import com.smartcampus.operations.service.TicketAttachmentService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -34,9 +30,6 @@ public class TicketAttachmentServiceImpl implements TicketAttachmentService {
     private final TicketAttachmentRepository attachmentRepository;
     private final IncidentTicketRepository ticketRepository;
     private final UserRepository userRepository;
-
-    @Value("${app.upload.dir:uploads}")
-    private String uploadDir;
 
     @Override
     @Transactional
@@ -54,25 +47,19 @@ public class TicketAttachmentServiceImpl implements TicketAttachmentService {
 
         validateImageFile(file);
 
-        String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-        Path uploadPath = Paths.get(uploadDir, "tickets", ticketId.toString());
-
         try {
-            Files.createDirectories(uploadPath);
-            Files.copy(file.getInputStream(), uploadPath.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
+            TicketAttachment attachment = TicketAttachment.builder()
+                    .ticket(ticket)
+                    .fileName(file.getOriginalFilename())
+                    .fileType(file.getContentType())
+                    .fileSize(file.getSize())
+                    .data(file.getBytes())
+                    .build();
+
+            return mapToResponse(attachmentRepository.save(attachment));
         } catch (IOException e) {
-            throw new RuntimeException("Failed to store file: " + e.getMessage());
+            throw new RuntimeException("Failed to read file: " + e.getMessage());
         }
-
-        TicketAttachment attachment = TicketAttachment.builder()
-                .ticket(ticket)
-                .fileName(file.getOriginalFilename())
-                .filePath(uploadPath.resolve(fileName).toString())
-                .fileType(file.getContentType())
-                .fileSize(file.getSize())
-                .build();
-
-        return mapToResponse(attachmentRepository.save(attachment));
     }
 
     @Override
@@ -102,12 +89,6 @@ public class TicketAttachmentServiceImpl implements TicketAttachmentService {
 
         TicketAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new RuntimeException("Attachment not found"));
-
-        try {
-            Files.deleteIfExists(Paths.get(attachment.getFilePath()));
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to delete file: " + e.getMessage());
-        }
 
         attachmentRepository.delete(attachment);
     }
@@ -144,11 +125,18 @@ public class TicketAttachmentServiceImpl implements TicketAttachmentService {
     }
 
     private AttachmentResponse mapToResponse(TicketAttachment attachment) {
+        String base64Data = null;
+        if (attachment.getData() != null) {
+            base64Data = "data:" + attachment.getFileType() + ";base64," +
+                    Base64.getEncoder().encodeToString(attachment.getData());
+        }
+
         return AttachmentResponse.builder()
                 .id(attachment.getId())
                 .fileName(attachment.getFileName())
                 .fileType(attachment.getFileType())
                 .fileSize(attachment.getFileSize())
+                .base64Data(base64Data)
                 .uploadedAt(attachment.getUploadedAt())
                 .build();
     }

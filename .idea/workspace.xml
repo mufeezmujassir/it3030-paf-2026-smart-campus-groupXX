@@ -6,10 +6,10 @@
   <component name="ChangeListManager">
     <list default="true" id="e09ed96b-5ac4-473c-8a40-c782bee0260d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/dto/AuthResponse.java" beforeDir="false" afterPath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/dto/AuthResponse.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/service/impl/AuthServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/service/impl/AuthServiceImpl.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/components/layout/Sidebar.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/layout/Sidebar.jsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/context/AuthContext.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/context/AuthContext.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/dto/AttachmentResponse.java" beforeDir="false" afterPath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/dto/AttachmentResponse.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/entity/TicketAttachment.java" beforeDir="false" afterPath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/entity/TicketAttachment.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/service/impl/TicketAttachmentServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/campus-operations-hub/src/main/java/com/smartcampus/operations/service/impl/TicketAttachmentServiceImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/campus-operations-hub/src/main/resources/application.properties" beforeDir="false" afterPath="$PROJECT_DIR$/campus-operations-hub/src/main/resources/application.properties" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/src/pages/tickets/TicketDetail.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/tickets/TicketDetail.jsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -89,7 +89,8 @@
       <workItem from="1774368001030" duration="1196000" />
       <workItem from="1774518985652" duration="5841000" />
       <workItem from="1774587439583" duration="868000" />
-      <workItem from="1774761402688" duration="4398000" />
+      <workItem from="1774761402688" duration="5200000" />
+      <workItem from="1775732910734" duration="1187000" />
     </task>
     <servers />
   </component>
