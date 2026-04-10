@@ -1,4 +1,5 @@
 // src/main/java/com/smartcampus/operations/service/MaintenanceService.java
+
 package com.smartcampus.operations.service;
 
 import com.smartcampus.operations.dto.MaintenanceActionDTO;
@@ -13,4 +14,5 @@ public interface MaintenanceService {
     MaintenanceRequestDTO requestExtension(UUID bookingId, int days, String technicianEmail);
     List<MaintenanceRequestDTO> getTechnicianRequests(String technicianEmail);
     MaintenanceRequestDTO updateMaintenanceStatus(UUID maintenanceId, MaintenanceActionDTO action, String adminEmail);
+    void cancelMaintenanceRequest(UUID bookingId, String technicianEmail);  // Add this
 }

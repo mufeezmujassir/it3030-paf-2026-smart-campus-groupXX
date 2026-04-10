@@ -1,9 +1,9 @@
 // src/pages/technician/MaintenanceRequests.jsx
 import React, { useState, useEffect } from 'react';
-import { Wrench, AlertCircle, Calendar, Clock, CheckCircle, XCircle, Loader2, Play, Check, RefreshCw, Eye, Info } from 'lucide-react';
+import { Wrench, AlertCircle, Calendar, Clock, CheckCircle, XCircle, Loader2, Play, Check, RefreshCw, Eye, Info, Ban } from 'lucide-react';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
-import { format, isToday, isPast, isFuture, differenceInMinutes } from 'date-fns';
+import { format } from 'date-fns';
 
 const MaintenanceRequests = () => {
     const [requests, setRequests] = useState([]);
@@ -26,6 +26,7 @@ const MaintenanceRequests = () => {
             });
 
             let allBookings = response.data.content || response.data;
+            // Filter to MAINTENANCE type only
             const maintenanceBookings = allBookings.filter(
                 booking => booking.bookingType === 'MAINTENANCE'
             );
@@ -41,19 +42,34 @@ const MaintenanceRequests = () => {
                             mr => mr.bookingId === booking.id
                         );
 
+                        // Determine the display status
+                        let displayStatus;
+                        if (booking.status === 'REJECTED') {
+                            displayStatus = 'REJECTED';
+                        } else if (booking.status === 'CANCELLED') {
+                            displayStatus = 'CANCELLED';
+                        } else if (matchingRequest?.maintenanceStatus) {
+                            displayStatus = matchingRequest.maintenanceStatus;
+                        } else {
+                            displayStatus = booking.status === 'APPROVED' ? 'APPROVED' : 'PENDING';
+                        }
+
                         return {
                             ...booking,
-                            maintenanceStatus: matchingRequest?.maintenanceStatus ||
-                                (booking.status === 'APPROVED' ? 'APPROVED' : 'PENDING'),
+                            maintenanceStatus: displayStatus,
                             maintenanceStartedAt: matchingRequest?.startedAt,
                             maintenanceCompletedAt: matchingRequest?.completedAt,
                             maintenanceId: matchingRequest?.id
                         };
                     } catch (err) {
                         console.error('Error fetching maintenance status for booking:', booking.id, err);
+                        let displayStatus = booking.status === 'APPROVED' ? 'APPROVED' : 'PENDING';
+                        if (booking.status === 'REJECTED' || booking.status === 'CANCELLED') {
+                            displayStatus = booking.status;
+                        }
                         return {
                             ...booking,
-                            maintenanceStatus: booking.status === 'APPROVED' ? 'APPROVED' : 'PENDING'
+                            maintenanceStatus: displayStatus
                         };
                     }
                 })
@@ -102,9 +118,13 @@ const MaintenanceRequests = () => {
         const isFutureDate = bookingDate > new Date(new Date().setHours(0, 0, 0, 0));
 
         if (isFutureDate) {
+            const graceStartTime = new Date(scheduledStart);
+            graceStartTime.setMinutes(scheduledStart.getMinutes() - 15);
+            const graceEndTime = new Date(scheduledStart);
+            graceEndTime.setMinutes(scheduledStart.getMinutes() + 30);
             return {
                 canStart: false,
-                message: `Maintenance scheduled for ${format(bookingDate, 'MMM d, yyyy')} at ${request.startTime}. You can start on the scheduled date between ${format(scheduledStart.setMinutes(scheduledStart.getMinutes() - 15), 'h:mm a')} and ${format(scheduledStart.setMinutes(scheduledStart.getMinutes() + 45), 'h:mm a')}.`,
+                message: `Maintenance scheduled for ${format(bookingDate, 'MMM d, yyyy')} at ${request.startTime}. You can start on the scheduled date between ${format(graceStartTime, 'h:mm a')} and ${format(graceEndTime, 'h:mm a')}.`,
                 variant: 'info'
             };
         }
@@ -148,6 +168,14 @@ const MaintenanceRequests = () => {
     };
 
     const getTimeStatusBadge = (request) => {
+        // If cancelled or rejected, return appropriate badge
+        if (request.maintenanceStatus === 'CANCELLED') {
+            return { text: 'Cancelled', className: 'bg-gray-100 text-gray-600' };
+        }
+        if (request.maintenanceStatus === 'REJECTED') {
+            return { text: 'Rejected', className: 'bg-rose-100 text-rose-700' };
+        }
+
         const now = new Date();
         const bookingDate = new Date(request.bookingDate);
         const [startHour] = request.startTime.split(':').map(Number);
@@ -230,6 +258,26 @@ const MaintenanceRequests = () => {
         }
     };
 
+    const handleCancelMaintenance = async (request) => {
+        const statusText = request.maintenanceStatus === 'APPROVED' ? 'approved' : 'pending';
+        if (!window.confirm(`Are you sure you want to cancel this ${statusText} maintenance request for ${request.resourceName} on ${format(new Date(request.bookingDate), 'MMM d, yyyy')} at ${request.startTime}? This action cannot be undone.`)) {
+            return;
+        }
+
+        setProcessing(true);
+        try {
+            await api.delete(`/maintenance/${request.id}/cancel`);
+            toast.success('Maintenance request cancelled successfully');
+            fetchMaintenanceRequests();
+        } catch (error) {
+            console.error('Cancel maintenance error:', error);
+            const errorMsg = error.response?.data?.message || 'Failed to cancel maintenance request';
+            toast.error(errorMsg);
+        } finally {
+            setProcessing(false);
+        }
+    };
+
     const handleRequestExtension = async () => {
         if (!selectedRequest || !extensionDays || extensionDays < 1) {
             toast.error('Please enter valid number of days');
@@ -265,7 +313,7 @@ const MaintenanceRequests = () => {
                 border: 'border-amber-200',
                 icon: <Clock className="w-4 h-4" />,
                 label: 'Pending Approval',
-                actions: ['view']
+                actions: ['view', 'cancel']
             },
             APPROVED: {
                 bg: 'bg-emerald-100',
@@ -273,7 +321,7 @@ const MaintenanceRequests = () => {
                 border: 'border-emerald-200',
                 icon: <CheckCircle className="w-4 h-4" />,
                 label: 'Approved - Ready to Start',
-                actions: ['start', 'view']
+                actions: ['start', 'cancel', 'view']
             },
             IN_PROGRESS: {
                 bg: 'bg-blue-100',
@@ -297,6 +345,14 @@ const MaintenanceRequests = () => {
                 border: 'border-rose-200',
                 icon: <XCircle className="w-4 h-4" />,
                 label: 'Rejected',
+                actions: ['view']
+            },
+            CANCELLED: {
+                bg: 'bg-gray-100',
+                text: 'text-gray-600',
+                border: 'border-gray-200',
+                icon: <Ban className="w-4 h-4" />,
+                label: 'Cancelled',
                 actions: ['view']
             },
             EXTENSION_REQUESTED: {
@@ -332,7 +388,8 @@ const MaintenanceRequests = () => {
         pending: requests.filter(r => (r.maintenanceStatus || r.status) === 'PENDING').length,
         approved: requests.filter(r => (r.maintenanceStatus || r.status) === 'APPROVED').length,
         inProgress: requests.filter(r => (r.maintenanceStatus || r.status) === 'IN_PROGRESS').length,
-        completed: requests.filter(r => (r.maintenanceStatus || r.status) === 'COMPLETED').length
+        completed: requests.filter(r => (r.maintenanceStatus || r.status) === 'COMPLETED').length,
+        cancelled: requests.filter(r => (r.maintenanceStatus || r.status) === 'CANCELLED' || (r.maintenanceStatus || r.status) === 'REJECTED').length
     };
 
     return (
@@ -356,7 +413,7 @@ const MaintenanceRequests = () => {
                     </div>
 
                     {requests.length > 0 && (
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 p-6 bg-gray-50/30">
+                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 p-6 bg-gray-50/30">
                             <div className="bg-white rounded-xl p-3 text-center border border-gray-100">
                                 <p className="text-2xl font-bold text-text-primary">{stats.total}</p>
                                 <p className="text-xs text-text-secondary">Total Requests</p>
@@ -377,6 +434,10 @@ const MaintenanceRequests = () => {
                                 <p className="text-2xl font-bold text-green-600">{stats.completed}</p>
                                 <p className="text-xs text-green-600">Completed</p>
                             </div>
+                            <div className="bg-white rounded-xl p-3 text-center border border-gray-200">
+                                <p className="text-2xl font-bold text-gray-600">{stats.cancelled}</p>
+                                <p className="text-xs text-gray-600">Cancelled/Rejected</p>
+                            </div>
                         </div>
                     )}
 
@@ -387,6 +448,7 @@ const MaintenanceRequests = () => {
                             <button onClick={() => setFilterStatus('APPROVED')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${filterStatus === 'APPROVED' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>Approved</button>
                             <button onClick={() => setFilterStatus('IN_PROGRESS')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${filterStatus === 'IN_PROGRESS' ? 'bg-blue-500 text-white shadow-sm' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>In Progress</button>
                             <button onClick={() => setFilterStatus('COMPLETED')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${filterStatus === 'COMPLETED' ? 'bg-green-500 text-white shadow-sm' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>Completed</button>
+                            <button onClick={() => setFilterStatus('CANCELLED')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${filterStatus === 'CANCELLED' ? 'bg-gray-500 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Cancelled/Rejected</button>
                         </div>
                     </div>
                 </div>
@@ -395,14 +457,17 @@ const MaintenanceRequests = () => {
                     {loading ? (
                         <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
                     ) : filteredRequests.length === 0 ? (
-                        <div className="text-center py-16"><Wrench className="w-12 h-12 text-gray-300 mx-auto mb-3" /><p className="text-text-secondary">No maintenance requests found</p></div>
+                        <div className="text-center py-16">
+                            <Wrench className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                            <p className="text-text-secondary">No maintenance requests found</p>
+                        </div>
                     ) : (
                         <div className="divide-y divide-gray-100">
                             {filteredRequests.map((request) => {
                                 const displayStatus = request.maintenanceStatus || request.status;
                                 const statusConfig = getStatusConfig(displayStatus);
                                 const priorityConfig = getPriorityConfig(request.priority);
-                                const timeStatus = getTimeStatusBadge(request);
+                                const timeStatus = displayStatus === 'APPROVED' ? getTimeStatusBadge(request) : null;
                                 const startStatus = displayStatus === 'APPROVED' ? getStartButtonStatus(request) : null;
 
                                 return (
@@ -415,7 +480,7 @@ const MaintenanceRequests = () => {
                                                     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${statusConfig.bg} ${statusConfig.text} border ${statusConfig.border}`}>
                                                         {statusConfig.icon}<span>{statusConfig.label}</span>
                                                     </span>
-                                                    {displayStatus === 'APPROVED' && (
+                                                    {displayStatus === 'APPROVED' && timeStatus && (
                                                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${timeStatus.className}`}>
                                                             {timeStatus.text}
                                                         </span>
@@ -423,9 +488,23 @@ const MaintenanceRequests = () => {
                                                 </div>
                                                 <p className="text-sm text-text-primary mb-3">{request.issueDescription || 'No description provided'}</p>
                                                 <div className="flex flex-wrap gap-4 text-sm text-text-secondary">
-                                                    <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>{format(new Date(request.bookingDate), 'EEEE, MMM d, yyyy')}</span></div>
-                                                    <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>{request.startTime} - {request.endTime}</span></div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Calendar className="w-4 h-4" />
+                                                        <span>{format(new Date(request.bookingDate), 'EEEE, MMM d, yyyy')}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Clock className="w-4 h-4" />
+                                                        <span>{request.startTime} - {request.endTime}</span>
+                                                    </div>
                                                 </div>
+
+                                                {/* Show admin reason for cancelled/rejected requests */}
+                                                {(displayStatus === 'CANCELLED' || displayStatus === 'REJECTED') && request.adminReason && (
+                                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                                        <p className="text-xs font-semibold text-text-secondary">Reason:</p>
+                                                        <p className="text-sm text-text-primary mt-1">{request.adminReason}</p>
+                                                    </div>
+                                                )}
 
                                                 {/* Time window info for approved requests */}
                                                 {displayStatus === 'APPROVED' && startStatus && !startStatus.canStart && startStatus.variant !== 'success' && (
@@ -446,14 +525,8 @@ const MaintenanceRequests = () => {
                                                         }`}>{startStatus.message}</p>
                                                     </div>
                                                 )}
-
-                                                {request.adminReason && (
-                                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-                                                        <p className="text-xs font-semibold text-text-secondary">Admin Response:</p>
-                                                        <p className="text-sm text-text-primary">{request.adminReason}</p>
-                                                    </div>
-                                                )}
                                             </div>
+
                                             <div className="flex flex-row lg:flex-col gap-2">
                                                 {statusConfig.actions.includes('start') && displayStatus === 'APPROVED' && (
                                                     <button
@@ -469,13 +542,32 @@ const MaintenanceRequests = () => {
                                                         Start Maintenance
                                                     </button>
                                                 )}
+
                                                 {statusConfig.actions.includes('complete') && (
-                                                    <button onClick={() => handleCompleteMaintenance(request)} disabled={processing} className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-xl text-sm font-semibold hover:bg-green-100 transition">
+                                                    <button
+                                                        onClick={() => handleCompleteMaintenance(request)}
+                                                        disabled={processing}
+                                                        className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-xl text-sm font-semibold hover:bg-green-100 transition"
+                                                    >
                                                         <Check className="w-4 h-4" /> Mark Completed
                                                     </button>
                                                 )}
+
+                                                {statusConfig.actions.includes('cancel') && (
+                                                    <button
+                                                        onClick={() => handleCancelMaintenance(request)}
+                                                        disabled={processing}
+                                                        className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-100 transition"
+                                                    >
+                                                        <Ban className="w-4 h-4" /> Cancel Request
+                                                    </button>
+                                                )}
+
                                                 {statusConfig.actions.includes('extend') && (
-                                                    <button onClick={() => { setSelectedRequest(request); setShowExtensionModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-sm font-semibold hover:bg-amber-100 transition">
+                                                    <button
+                                                        onClick={() => { setSelectedRequest(request); setShowExtensionModal(true); }}
+                                                        className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-sm font-semibold hover:bg-amber-100 transition"
+                                                    >
                                                         <RefreshCw className="w-4 h-4" /> Request Extension
                                                     </button>
                                                 )}

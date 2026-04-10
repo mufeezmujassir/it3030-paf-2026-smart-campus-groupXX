@@ -7,5 +7,6 @@ public enum MaintenanceStatus {
         REJECTED,
         IN_PROGRESS,
         COMPLETED,
-        EXTENSION_REQUESTED
+        EXTENSION_REQUESTED,
+        CANCELLED
 }
