@@ -8,5 +8,4 @@ public enum MaintenanceStatus {
         IN_PROGRESS,
         COMPLETED,
         EXTENSION_REQUESTED,
-        CANCELLED
 }

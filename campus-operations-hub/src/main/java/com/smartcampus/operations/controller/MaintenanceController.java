@@ -70,14 +70,4 @@ public class MaintenanceController {
         MaintenanceRequestDTO response = maintenanceService.updateMaintenanceStatus(maintenanceId, action, userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
-
-    @DeleteMapping("/{bookingId}/cancel")
-    @PreAuthorize("hasRole('TECHNICIAN')")
-    public ResponseEntity<String> cancelMaintenanceRequest(
-            @PathVariable UUID bookingId,
-            @AuthenticationPrincipal UserDetails userDetails) {
-        System.out.println("Cancelling maintenance request for booking: " + bookingId);
-        maintenanceService.cancelMaintenanceRequest(bookingId, userDetails.getUsername());
-        return ResponseEntity.ok("Maintenance request cancelled successfully");
-    }
 }
