@@ -22,16 +22,13 @@ const formatLongDate = (date) => {
     return date.toLocaleDateString('en-US', options);
 };
 
-// LocalDate from Java serializes as an array [year, month, day] or "YYYY-MM-DD" string
 const formatMaintenanceEndDate = (dateValue) => {
     if (!dateValue) return null;
     try {
         let date;
         if (Array.isArray(dateValue)) {
-            // Java LocalDate → Jackson array: month is 1-based, Date() needs 0-based
             date = new Date(dateValue[0], dateValue[1] - 1, dateValue[2]);
         } else {
-            // ISO string — append time to avoid UTC offset flipping the day
             date = new Date(String(dateValue) + 'T00:00:00');
         }
         return date.toLocaleDateString('en-US', {
@@ -59,7 +56,6 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [timeSlots, setTimeSlots] = useState([]);
     const [bookedSlots, setBookedSlots] = useState([]);
-    // null = not under maintenance; object = { maintenanceReason, maintenanceEndDate }
     const [maintenanceInfo, setMaintenanceInfo] = useState(null);
     const [loading, setLoading] = useState(false);
     const [selectedSlot, setSelectedSlot] = useState(null);
@@ -101,12 +97,8 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
             const formattedDate = formatDate(selectedDate);
             const data = await bookingService.getAvailableTimeSlots(resourceId, formattedDate);
 
-            // Log so we can inspect the exact field names from the backend
             console.log('[BookingCalendar] slot response:', data);
 
-            // Jackson strips "is" from primitive booleans → "underMaintenance".
-            // @JsonProperty on the DTO fixes it on the backend, but we also handle
-            // the old name here as a safety net in case of a caching/build issue.
             const underMaintenance =
                 data.isUnderMaintenance === true ||
                 data.underMaintenance === true;
@@ -137,6 +129,8 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
         setBookingType('REGULAR');
         setIssueDescription('');
         setPriority('MEDIUM');
+        setExpectedAttendees('');
+        setBookingPurpose('');
     };
 
     const handlePrevDay = () => {
@@ -204,22 +198,29 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                 }
             }
 
+            const isMaintenance = userRole === 'TECHNICIAN' && bookingType === 'MAINTENANCE';
+
             const bookingData = {
                 resourceId,
                 bookingDate: formattedDate,
                 startTime: selectedSlot.startTime,
                 endTime: selectedSlot.endTime,
                 purpose: bookingPurpose,
-                expectedAttendees: expectedAttendees ? parseInt(expectedAttendees) : null,
-                bookingType: userRole === 'TECHNICIAN' && bookingType === 'MAINTENANCE' ? 'MAINTENANCE' : 'REGULAR',
+                // Only send expectedAttendees for regular bookings
+                expectedAttendees: (!isMaintenance && expectedAttendees)
+                    ? parseInt(expectedAttendees)
+                    : null,
+                bookingType: isMaintenance ? 'MAINTENANCE' : 'REGULAR',
             };
-            if (bookingData.bookingType === 'MAINTENANCE') {
+
+            if (isMaintenance) {
                 bookingData.issueDescription = issueDescription;
                 bookingData.priority = priority;
             }
 
             await bookingService.createBooking(bookingData);
-            toast.success(bookingData.bookingType === 'MAINTENANCE'
+
+            toast.success(isMaintenance
                 ? 'Maintenance request submitted! Waiting for admin approval.'
                 : 'Booking request submitted! Waiting for approval.');
 
@@ -244,6 +245,7 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
         b => b.resourceId === resourceId && b.bookingDate === formatDate(selectedDate)
     );
     const isUnderMaintenance = maintenanceInfo !== null;
+    const isMaintenance = userRole === 'TECHNICIAN' && bookingType === 'MAINTENANCE';
 
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -295,7 +297,7 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                 )}
             </div>
 
-            {/* ── My bookings for this date (not shown under maintenance) ── */}
+            {/* ── My bookings for this date ── */}
             {!isUnderMaintenance && userBookingsForDate.length > 0 && (
                 <div className="px-6 pt-4">
                     <button
@@ -317,7 +319,12 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                                             <p className="text-sm font-medium text-text-primary">
                                                 {booking.startTime} - {booking.endTime}
                                             </p>
-                                            <p className="text-xs text-text-secondary">{booking.purpose || 'No purpose'}</p>
+                                            <p className="text-xs text-text-secondary">
+                                                {booking.bookingType === 'MAINTENANCE'
+                                                    ? `🔧 ${booking.issueDescription || 'Maintenance'}`
+                                                    : booking.purpose || 'No purpose'
+                                                }
+                                            </p>
                                         </div>
                                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                                             booking.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
@@ -345,24 +352,16 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                     </div>
 
                 ) : isUnderMaintenance ? (
-                    /* ══════════════════════════════════════════════════
-                       MAINTENANCE BANNER
-                       Replaces the time-slot grid whenever the selected
-                       date falls within the resource's maintenance window.
-                    ══════════════════════════════════════════════════ */
+                    /* ── Maintenance banner ── */
                     <div className="flex flex-col items-center text-center py-8 px-4">
-
-                        {/* Wrench icon */}
                         <div className="w-20 h-20 bg-amber-100 rounded-2xl flex items-center justify-center mb-5 border border-amber-200">
                             <Wrench className="w-10 h-10 text-amber-600" />
                         </div>
 
-                        {/* Heading */}
                         <h4 className="text-xl font-bold text-text-primary mb-2">
                             Resource Under Maintenance
                         </h4>
 
-                        {/* Body */}
                         <p className="text-sm text-text-secondary max-w-sm mb-6 leading-relaxed">
                             <span className="font-semibold text-text-primary">{resourceName}</span> is
                             currently under maintenance on{' '}
@@ -372,7 +371,6 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                             All time slots are blocked and no new bookings can be made for this date.
                         </p>
 
-                        {/* Reason */}
                         {maintenanceInfo.maintenanceReason && (
                             <div className="w-full max-w-md mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
                                 <p className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-1.5">
@@ -384,7 +382,6 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                             </div>
                         )}
 
-                        {/* End date */}
                         {maintenanceInfo.maintenanceEndDate && (
                             <div className="w-full max-w-md mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl text-left flex items-start gap-3">
                                 <CalendarX className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
@@ -403,8 +400,7 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                             </div>
                         )}
 
-                        {/* Navigation hint */}
-                        <p className="text-xs text-text-secondary mt-2 flex items-center gap-1">
+                        <p className="text-xs text-text-secondary mt-2">
                             Use the arrows above to navigate to a different date and check availability.
                         </p>
                     </div>
@@ -464,19 +460,61 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
 
+                        {/* Fixed header */}
                         <div className="p-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex-shrink-0">
                             <h3 className="text-xl font-bold text-text-primary">
-                                Confirm {bookingType === 'MAINTENANCE' ? 'Maintenance Request' : 'Booking'}
+                                Confirm {isMaintenance ? 'Maintenance Request' : 'Booking'}
                             </h3>
                             <p className="text-sm text-text-secondary mt-1">
                                 {resourceName} • {formatLongDate(selectedDate)} • {selectedSlot.startTime} - {selectedSlot.endTime}
                             </p>
                         </div>
 
+                        {/* Scrollable content */}
                         <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+                            {/* Technician: request type toggle */}
+                            {userRole === 'TECHNICIAN' && (
+                                <div>
+                                    <label className="block text-sm font-semibold text-text-primary mb-2">
+                                        Request Type
+                                    </label>
+                                    <div className="flex gap-4">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                value="REGULAR"
+                                                checked={bookingType === 'REGULAR'}
+                                                onChange={(e) => {
+                                                    setBookingType(e.target.value);
+                                                    setIssueDescription('');
+                                                    setPriority('MEDIUM');
+                                                }}
+                                                className="w-4 h-4 text-primary"
+                                            />
+                                            <span className="text-sm">Regular Booking</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                value="MAINTENANCE"
+                                                checked={bookingType === 'MAINTENANCE'}
+                                                onChange={(e) => {
+                                                    setBookingType(e.target.value);
+                                                    setExpectedAttendees('');
+                                                }}
+                                                className="w-4 h-4 text-primary"
+                                            />
+                                            <span className="text-sm">Maintenance Request</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Purpose field */}
                             <div>
                                 <label className="block text-sm font-semibold text-text-primary mb-2">
-                                    Purpose of {bookingType === 'MAINTENANCE' ? 'Maintenance' : 'Booking'}{' '}
+                                    {isMaintenance ? 'Maintenance Purpose' : 'Purpose of Booking'}{' '}
                                     <span className="text-red-500">*</span>
                                 </label>
                                 <textarea
@@ -484,99 +522,98 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                                     onChange={(e) => setBookingPurpose(e.target.value)}
                                     rows="2"
                                     className="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                    placeholder={bookingType === 'MAINTENANCE'
-                                        ? 'Describe the issue or reason for maintenance...'
+                                    placeholder={isMaintenance
+                                        ? 'Briefly describe why maintenance is needed...'
                                         : 'Describe the purpose of your booking...'}
                                     required
                                 />
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-semibold text-text-primary mb-2">
-                                    Expected Attendees
-                                </label>
-                                <input
-                                    type="number"
-                                    value={expectedAttendees}
-                                    onChange={(e) => setExpectedAttendees(e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                    placeholder="Number of people attending"
-                                    min="1"
-                                />
-                            </div>
-
-                            {userRole === 'TECHNICIAN' && (
-                                <div className="border-t border-gray-200 pt-3">
+                            {/* Expected Attendees — hidden for maintenance */}
+                            {!isMaintenance && (
+                                <div>
                                     <label className="block text-sm font-semibold text-text-primary mb-2">
-                                        Request Type
+                                        Expected Attendees
                                     </label>
-                                    <div className="flex gap-4 mb-3">
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input type="radio" value="REGULAR" checked={bookingType === 'REGULAR'} onChange={(e) => setBookingType(e.target.value)} className="w-4 h-4 text-primary" />
-                                            <span className="text-sm">Regular Booking</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input type="radio" value="MAINTENANCE" checked={bookingType === 'MAINTENANCE'} onChange={(e) => setBookingType(e.target.value)} className="w-4 h-4 text-primary" />
-                                            <span className="text-sm">Maintenance Request</span>
-                                        </label>
-                                    </div>
-                                    {bookingType === 'MAINTENANCE' && (
-                                        <div className="space-y-3 bg-red-50 p-3 rounded-xl border border-red-100">
-                                            <div>
-                                                <label className="block text-sm font-semibold text-text-primary mb-1">
-                                                    Issue Description <span className="text-red-500">*</span>
-                                                </label>
-                                                <textarea
-                                                    value={issueDescription}
-                                                    onChange={(e) => setIssueDescription(e.target.value)}
-                                                    rows="2"
-                                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                                    placeholder="Describe the issue in detail..."
-                                                    required
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-semibold text-text-primary mb-1">
-                                                    Priority Level
-                                                </label>
-                                                <select
-                                                    value={priority}
-                                                    onChange={(e) => setPriority(e.target.value)}
-                                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                                >
-                                                    <option value="LOW">Low - Can wait, schedule when available</option>
-                                                    <option value="MEDIUM">Medium - Needs attention within a week</option>
-                                                    <option value="HIGH">High - Urgent repair needed</option>
-                                                    <option value="CRITICAL">Critical - Resource completely unusable</option>
-                                                </select>
-                                            </div>
-                                            <div className="bg-red-100/50 p-2 rounded-lg flex items-start gap-2">
-                                                <Wrench className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
-                                                <p className="text-xs text-red-600">
-                                                    Once approved, the resource will be blocked and other users notified.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )}
+                                    <input
+                                        type="number"
+                                        value={expectedAttendees}
+                                        onChange={(e) => setExpectedAttendees(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="Number of people attending"
+                                        min="1"
+                                    />
                                 </div>
                             )}
 
+                            {/* Maintenance-specific fields */}
+                            {isMaintenance && (
+                                <div className="space-y-3 bg-red-50 p-4 rounded-xl border border-red-100">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-text-primary mb-1">
+                                            Issue Description <span className="text-red-500">*</span>
+                                        </label>
+                                        <textarea
+                                            value={issueDescription}
+                                            onChange={(e) => setIssueDescription(e.target.value)}
+                                            rows="3"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                            placeholder="Describe the issue in detail — what is broken, what needs fixing, any safety concerns..."
+                                            required
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-semibold text-text-primary mb-1">
+                                            Priority Level
+                                        </label>
+                                        <select
+                                            value={priority}
+                                            onChange={(e) => setPriority(e.target.value)}
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        >
+                                            <option value="LOW">Low — Can wait, schedule when available</option>
+                                            <option value="MEDIUM">Medium — Needs attention within a week</option>
+                                            <option value="HIGH">High — Urgent repair needed</option>
+                                            <option value="CRITICAL">Critical — Resource completely unusable</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="flex items-start gap-2 bg-red-100/50 p-2 rounded-lg">
+                                        <Wrench className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                                        <p className="text-xs text-red-700">
+                                            Once approved, the resource will be blocked during this time slot and affected users will be notified.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Info banner */}
                             <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-100">
                                 <div className="flex items-start gap-2">
                                     <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
                                     <p className="text-xs text-yellow-600">
-                                        {bookingType === 'MAINTENANCE'
-                                            ? 'Your maintenance request will be pending until an admin approves it. Once approved, the resource will be marked for maintenance during this time slot.'
-                                            : 'Your request will be pending until an admin approves it. Multiple users can request the same time slot, but only one will be approved.'}
+                                        {isMaintenance
+                                            ? 'Your maintenance request will be reviewed by an admin. Once approved, the resource will be marked for maintenance during this time slot and you will be notified to start within the scheduled window.'
+                                            : 'Your request will be pending until an admin approves it. Multiple users can request the same slot, but only one will be approved. You\'ll be notified once a decision is made.'}
                                     </p>
                                 </div>
                             </div>
                         </div>
 
+                        {/* Fixed footer */}
                         <div className="p-5 border-t border-gray-100 flex gap-3 flex-shrink-0">
                             <button
                                 type="button"
-                                onClick={() => { setShowBookingForm(false); setSelectedSlot(null); setBookingType('REGULAR'); setIssueDescription(''); setPriority('MEDIUM'); }}
+                                onClick={() => {
+                                    setShowBookingForm(false);
+                                    setSelectedSlot(null);
+                                    setBookingType('REGULAR');
+                                    setIssueDescription('');
+                                    setPriority('MEDIUM');
+                                    setBookingPurpose('');
+                                    setExpectedAttendees('');
+                                }}
                                 className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
                             >
                                 Cancel
@@ -584,12 +621,16 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                             <button
                                 type="submit"
                                 onClick={handleBookingSubmit}
-                                disabled={submitting || !bookingPurpose.trim() || (bookingType === 'MAINTENANCE' && !issueDescription.trim())}
+                                disabled={
+                                    submitting ||
+                                    !bookingPurpose.trim() ||
+                                    (isMaintenance && !issueDescription.trim())
+                                }
                                 className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-hover transition disabled:opacity-50"
                             >
                                 {submitting
                                     ? <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                                    : bookingType === 'MAINTENANCE' ? 'Submit Maintenance Request' : 'Submit Request'}
+                                    : isMaintenance ? 'Submit Maintenance Request' : 'Submit Request'}
                             </button>
                         </div>
                     </div>
