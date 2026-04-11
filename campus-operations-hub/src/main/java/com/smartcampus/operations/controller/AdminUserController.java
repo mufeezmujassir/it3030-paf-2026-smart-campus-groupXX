@@ -27,8 +27,9 @@ public class AdminUserController {
     private final UserModelAssembler userModelAssembler;
 
     @PostMapping
-    public ResponseEntity<EntityModel<UserResponse>> createUser(@Valid @RequestBody UserCreateRequest request) {
-        UserResponse response = userService.createUser(request);
+    public ResponseEntity<EntityModel<UserResponse>> createUser(@Valid @RequestBody UserCreateRequest request,
+                                                               @org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.core.userdetails.UserDetails userDetails) {
+        UserResponse response = userService.createUser(request, userDetails.getUsername());
         return new ResponseEntity<>(userModelAssembler.toModel(response), HttpStatus.CREATED);
     }
 
@@ -49,8 +50,9 @@ public class AdminUserController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<String> deleteUser(@PathVariable UUID id) {
-        userService.deleteUser(id);
+    public ResponseEntity<String> deleteUser(@PathVariable UUID id,
+                                             @org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.core.userdetails.UserDetails userDetails) {
+        userService.deleteUser(id, userDetails.getUsername());
         return ResponseEntity.ok("User deleted successfully");
     }
 }

@@ -27,6 +27,7 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
+    private final com.smartcampus.operations.service.NotificationService notificationService;
     private final GoogleAuthenticator googleAuthenticator = new GoogleAuthenticator();
 
     @Override
@@ -67,7 +68,8 @@ public class AuthServiceImpl implements AuthService {
                     .role(user.getRole().name())
                     .requiresOtp(true)
                     .secretKey(user.getTwoFactorSecret())
-                    .qrCodeUrl(String.format("otpauth://totp/MapleLink:%s?secret=%s&issuer=MapleLink", user.getEmail(), user.getTwoFactorSecret()))
+                    .qrCodeUrl(String.format("otpauth://totp/MapleLink:%s?secret=%s&issuer=MapleLink", user.getEmail(),
+                            user.getTwoFactorSecret()))
                     .build();
         }
 
@@ -83,6 +85,13 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
 
         log.info("Admin login successful for: {}", user.getEmail());
+
+        // Send welcome notification
+        notificationService.sendNotification(
+                user.getId(),
+                "Welcome Back",
+                "You have logged in successfully. Welcome to Smart Campus!",
+                "LOGIN_SUCCESS");
 
         return AuthResponse.builder()
                 .id(user.getId())
@@ -118,7 +127,7 @@ public class AuthServiceImpl implements AuthService {
                 userRepository.save(user);
                 log.info("Generated new 2FA secret for user: {}", user.getEmail());
             }
-            
+
             log.info("2FA required for user: {}", user.getEmail());
             return AuthResponse.builder()
                     .id(user.getId())
@@ -127,7 +136,8 @@ public class AuthServiceImpl implements AuthService {
                     .role(user.getRole().name())
                     .requiresOtp(true)
                     .secretKey(user.getTwoFactorSecret())
-                    .qrCodeUrl(String.format("otpauth://totp/MapleLink:%s?secret=%s&issuer=MapleLink", user.getEmail(), user.getTwoFactorSecret()))
+                    .qrCodeUrl(String.format("otpauth://totp/MapleLink:%s?secret=%s&issuer=MapleLink", user.getEmail(),
+                            user.getTwoFactorSecret()))
                     .build();
         }
 
@@ -142,6 +152,13 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
 
         log.info("OAuth login successful for: {}", user.getEmail());
+
+        // Send welcome notification
+        notificationService.sendNotification(
+                user.getId(),
+                "Welcome Back",
+                "You have logged in successfully. Welcome to Smart Campus!",
+                "LOGIN_SUCCESS");
 
         return AuthResponse.builder()
                 .id(user.getId())
@@ -188,6 +205,13 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
 
         log.info("OTP verified successfully for: {}", user.getEmail());
+
+        // Send welcome notification
+        notificationService.sendNotification(
+                user.getId(),
+                "Welcome Back",
+                "2FA verification successful. Welcome to Smart Campus!",
+                "LOGIN_SUCCESS");
 
         return AuthResponse.builder()
                 .id(user.getId())
@@ -250,7 +274,6 @@ public class AuthServiceImpl implements AuthService {
         return new org.springframework.security.core.userdetails.User(
                 user.getEmail(),
                 user.getPassword() != null ? user.getPassword() : "",
-                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
-        );
+                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
     }
 }

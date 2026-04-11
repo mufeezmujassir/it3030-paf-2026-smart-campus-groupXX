@@ -23,6 +23,7 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
 
     private final IncidentTicketRepository ticketRepository;
     private final UserRepository userRepository;
+    private final com.smartcampus.operations.service.NotificationService notificationService;
 
     @Override
     @Transactional
@@ -58,7 +59,27 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                 .assignedTo(assignedTechnician)
                 .build();
 
-        return mapToResponse(ticketRepository.save(ticket));
+        TicketResponse response = mapToResponse(ticketRepository.save(ticket));
+
+        // Notify the creator
+        notificationService.sendNotification(
+                user.getId(),
+                "Ticket Created",
+                String.format("Ticket '%s' created successfully", ticket.getTitle()),
+                "TICKET_CREATED"
+        );
+
+        // Notify assigned technician
+        if (assignedTechnician != null) {
+            notificationService.sendNotification(
+                    assignedTechnician.getId(),
+                    "New Ticket Assignment",
+                    String.format("A new ticket '%s' has been assigned to you", ticket.getTitle()),
+                    "TICKET_ASSIGNED"
+            );
+        }
+
+        return response;
     }
 
     @Override
@@ -114,7 +135,17 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
         validateStatusTransition(ticket.getStatus(), request.getStatus(), user);
 
         ticket.setStatus(request.getStatus());
-        return mapToResponse(ticketRepository.save(ticket));
+        TicketResponse response = mapToResponse(ticketRepository.save(ticket));
+
+        // Notify ticket creator about status change
+        notificationService.sendNotification(
+                ticket.getCreatedBy().getId(),
+                "Ticket Status Updated",
+                String.format("Your ticket '%s' status changed to %s", ticket.getTitle(), ticket.getStatus()),
+                "TICKET_STATUS_CHANGED"
+        );
+
+        return response;
     }
 
     @Override
@@ -137,7 +168,25 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
 
         ticket.setAssignedTo(technician);
         ticket.setStatus(TicketStatus.IN_PROGRESS);
-        return mapToResponse(ticketRepository.save(ticket));
+        TicketResponse response = mapToResponse(ticketRepository.save(ticket));
+
+        // Notify the technician
+        notificationService.sendNotification(
+                technician.getId(),
+                "Ticket Assigned",
+                String.format("You have been assigned to ticket '%s'", ticket.getTitle()),
+                "TICKET_ASSIGNED"
+        );
+
+        // Notify the creator
+        notificationService.sendNotification(
+                ticket.getCreatedBy().getId(),
+                "Technician Assigned",
+                String.format("Your ticket '%s' has been assigned to %s", ticket.getTitle(), technician.getFullName()),
+                "TICKET_ASSIGNED"
+        );
+
+        return response;
     }
 
     @Override
@@ -157,7 +206,17 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
 
         ticket.setStatus(TicketStatus.REJECTED);
         ticket.setRejectionReason(request.getReason());
-        return mapToResponse(ticketRepository.save(ticket));
+        TicketResponse response = mapToResponse(ticketRepository.save(ticket));
+
+        // Notify the creator
+        notificationService.sendNotification(
+                ticket.getCreatedBy().getId(),
+                "Ticket Rejected",
+                String.format("Your ticket '%s' has been rejected. Reason: %s", ticket.getTitle(), request.getReason()),
+                "TICKET_REJECTED"
+        );
+
+        return response;
     }
 
     @Override
@@ -172,7 +231,17 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
 
         ticket.setResolutionNotes(request.getResolutionNotes());
         ticket.setStatus(TicketStatus.RESOLVED);
-        return mapToResponse(ticketRepository.save(ticket));
+        TicketResponse response = mapToResponse(ticketRepository.save(ticket));
+
+        // Notify the creator
+        notificationService.sendNotification(
+                ticket.getCreatedBy().getId(),
+                "Ticket Resolved",
+                String.format("Your ticket '%s' has been resolved", ticket.getTitle()),
+                "TICKET_RESOLVED"
+        );
+
+        return response;
     }
 
     @Override
@@ -185,7 +254,20 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
             throw new UnauthorizedTicketAccessException();
         }
 
+        String ticketTitle = ticket.getTitle();
+        UUID creatorId = ticket.getCreatedBy().getId();
+        
         ticketRepository.delete(ticket);
+
+        // Notify the creator if deleted by an admin
+        if (user.getRole() == Role.ADMIN && !creatorId.equals(user.getId())) {
+            notificationService.sendNotification(
+                    creatorId,
+                    "Ticket Deleted",
+                    String.format("Ticket '%s' has been deleted by an administrator", ticketTitle),
+                    "TICKET_DELETED"
+            );
+        }
     }
 
     private static final Map<String, String> CATEGORY_SPECIALIZATION_MAP = Map.of(
@@ -230,7 +312,17 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
 
         ticket.setAssignedTo(technician);
         ticket.setStatus(TicketStatus.IN_PROGRESS);
-        return mapToResponse(ticketRepository.save(ticket));
+        TicketResponse response = mapToResponse(ticketRepository.save(ticket));
+
+        // Notify the technician
+        notificationService.sendNotification(
+                technician.getId(),
+                "Auto-assigned Ticket",
+                String.format("A ticket '%s' has been auto-assigned to you", ticket.getTitle()),
+                "TICKET_ASSIGNED"
+        );
+
+        return response;
     }
 
     @Override
