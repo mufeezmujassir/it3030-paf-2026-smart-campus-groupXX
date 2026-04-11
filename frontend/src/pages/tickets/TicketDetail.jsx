@@ -87,6 +87,20 @@ const TicketDetail = () => {
     const [technicianId, setTechnicianId] = useState('');
     const [actionLoading, setActionLoading] = useState(false);
 
+    // ── Open attachment in new tab using blob URL ─────────────────────────────
+    const openAttachment = (base64Data) => {
+        if (!base64Data) return;
+        const byteString = atob(base64Data.split(',')[1]);
+        const mimeType = base64Data.split(',')[0].split(':')[1].split(';')[0];
+        const byteArray = new Uint8Array(byteString.length);
+        for (let i = 0; i < byteString.length; i++) {
+            byteArray[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([byteArray], { type: mimeType });
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+    };
+
     const fetchTicket = async () => {
         try {
             const res = await getTicketById(id);
@@ -119,8 +133,6 @@ const TicketDetail = () => {
                 .catch(() => console.error('Failed to load technicians'));
         }
     }, [showAssignModal]);
-
-
 
     const handleAssign = async () => {
         setActionLoading(true);
@@ -508,7 +520,6 @@ const TicketDetail = () => {
                     {/* Right Column */}
                     <div className="space-y-5">
 
-                        {/* Actions */}
                         {/* Admin/Technician actions panel */}
                         {isActive && (isAdmin || isTechnician) && (
                             <div className="rounded-2xl border p-5"
@@ -554,12 +565,11 @@ const TicketDetail = () => {
                             </div>
                         )}
 
-                        {/* Owner delete — completely separate, outside admin panel */}
+                        {/* Owner delete */}
                         {isOwner && !isAdmin && !isTechnician && isActive && (
                             <div className="rounded-2xl border p-5"
                                  style={{ backgroundColor: 'var(--color-surface)', borderColor: '#E8D5C4' }}>
-                                <h2 className="text-sm font-bold mb-3"
-                                    style={{ color: 'var(--color-text-primary)' }}>
+                                <h2 className="text-sm font-bold mb-3" style={{ color: 'var(--color-text-primary)' }}>
                                     ⚙️ Ticket Actions
                                 </h2>
                                 <button onClick={handleDelete}
@@ -585,11 +595,9 @@ const TicketDetail = () => {
                                                  style={{ backgroundColor: 'var(--color-primary)' }}>
                                                 {ticket.assignedToName.charAt(0)}
                                             </div>
-                                            <div>
-                                                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                                                    {ticket.assignedToName}
-                                                </p>
-                                            </div>
+                                            <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                                                {ticket.assignedToName}
+                                            </p>
                                         </div>
                                     </div>
                                 )}
@@ -644,7 +652,7 @@ const TicketDetail = () => {
                                 <h2 className="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
                                     📎 Attachments ({ticket.attachments?.length || 0}/3)
                                 </h2>
-                                {isActive && (ticket.attachments?.length || 0) < 3 && (
+                                {isActive && (ticket.attachments?.length || 0) < 3 && (isOwner || isAdmin) && (
                                     <label className="text-xs font-semibold cursor-pointer hover:underline"
                                            style={{ color: 'var(--color-primary)' }}>
                                         + Add
@@ -663,16 +671,23 @@ const TicketDetail = () => {
                                     <div key={att.id}
                                          className="rounded-xl border overflow-hidden group"
                                          style={{ backgroundColor: 'var(--color-background)', borderColor: '#E8D5C4' }}>
-                                        {att.base64Data && (
-                                            <a href={att.base64Data} target="_blank" rel="noopener noreferrer">
-                                                <img
-                                                    src={att.base64Data}
-                                                    alt={att.fileName}
-                                                    className="w-full h-32 object-cover hover:opacity-90 transition"
-                                                    onError={e => { e.target.style.display = 'none'; }}
-                                                />
-                                            </a>
+
+                                        {/* Image Preview */}
+                                        {att.base64Data ? (
+                                            <img
+                                                src={att.base64Data}
+                                                alt={att.fileName}
+                                                className="w-full h-32 object-cover cursor-pointer hover:opacity-90 transition"
+                                                onClick={() => openAttachment(att.base64Data)}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-32 flex items-center justify-center"
+                                                 style={{ backgroundColor: '#F0E0D0' }}>
+                                                <span className="text-3xl">🖼️</span>
+                                            </div>
                                         )}
+
+                                        {/* File Info */}
                                         <div className="flex items-center justify-between px-3 py-2">
                                             <div>
                                                 <p className="text-xs font-medium truncate max-w-28"
@@ -683,12 +698,20 @@ const TicketDetail = () => {
                                                     {(att.fileSize / 1024).toFixed(1)} KB
                                                 </p>
                                             </div>
-                                            {(isAdmin || isOwner) && (
-                                                <button onClick={() => handleAttachmentDelete(att.id)}
-                                                        className="text-red-400 hover:text-red-600 transition text-lg leading-none">
-                                                    ×
+                                            <div className="flex gap-2 items-center">
+                                                <button
+                                                    onClick={() => openAttachment(att.base64Data)}
+                                                    className="text-xs font-semibold hover:underline"
+                                                    style={{ color: 'var(--color-primary)' }}>
+                                                    View
                                                 </button>
-                                            )}
+                                                {(isAdmin || isOwner) && (
+                                                    <button onClick={() => handleAttachmentDelete(att.id)}
+                                                            className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition text-lg leading-none">
+                                                        ×
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
@@ -702,8 +725,6 @@ const TicketDetail = () => {
             {showAssignModal && (
                 <Modal title="Assign Technician" onClose={() => setShowAssignModal(false)}
                        onConfirm={handleAssign} confirmLabel="Assign" loading={actionLoading}>
-
-                    {/* Mode Toggle */}
                     <div className="flex rounded-xl overflow-hidden border mb-4"
                          style={{ borderColor: '#E8D5C4' }}>
                         {['auto', 'manual'].map(mode => (
@@ -721,59 +742,44 @@ const TicketDetail = () => {
 
                     {assignMode === 'auto' ? (
                         <div>
-                            <div className="rounded-xl p-4 mb-3"
-                                 style={{ backgroundColor: 'var(--color-background)' }}>
-                                <p className="text-sm font-semibold mb-1"
-                                   style={{ color: 'var(--color-text-primary)' }}>
+                            <div className="rounded-xl p-4 mb-3" style={{ backgroundColor: 'var(--color-background)' }}>
+                                <p className="text-sm font-semibold mb-1" style={{ color: 'var(--color-text-primary)' }}>
                                     🎯 Smart Auto-Assignment
                                 </p>
                                 <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                                    The system will automatically find the best technician
-                                    based on their specialization matching the ticket category:
-                                    <span className="font-bold ml-1"
-                                          style={{ color: 'var(--color-primary)' }}>
-                            {ticket?.category?.replace('_', ' ')}
-                        </span>
+                                    Automatically finds the best technician matching category:
+                                    <span className="font-bold ml-1" style={{ color: 'var(--color-primary)' }}>
+                                        {ticket?.category?.replace('_', ' ')}
+                                    </span>
                                 </p>
                             </div>
-                            {/* Available technicians preview */}
                             {technicians.length > 0 && (
-                                <div>
-                                    <p className="text-xs font-semibold mb-2"
-                                       style={{ color: 'var(--color-text-secondary)' }}>
-                                        Available technicians:
-                                    </p>
-                                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                                        {technicians.map(t => (
-                                            <div key={t.id}
-                                                 className="flex items-center justify-between px-3 py-2 rounded-lg border"
-                                                 style={{ borderColor: '#E8D5C4', backgroundColor: 'var(--color-background)' }}>
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                                                         style={{ backgroundColor: 'var(--color-primary)' }}>
-                                                        {t.fullName?.charAt(0)}
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs font-semibold"
-                                                           style={{ color: 'var(--color-text-primary)' }}>
-                                                            {t.fullName}
-                                                        </p>
-                                                        <p className="text-xs"
-                                                           style={{ color: 'var(--color-text-secondary)' }}>
-                                                            {t.technicianSpecialization || 'General'}
-                                                        </p>
-                                                    </div>
+                                <div className="space-y-2 max-h-40 overflow-y-auto">
+                                    {technicians.map(t => (
+                                        <div key={t.id}
+                                             className="flex items-center justify-between px-3 py-2 rounded-lg border"
+                                             style={{ borderColor: '#E8D5C4', backgroundColor: 'var(--color-background)' }}>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                                                     style={{ backgroundColor: 'var(--color-primary)' }}>
+                                                    {t.fullName?.charAt(0)}
                                                 </div>
-                                                {t.technicianSpecialization?.toLowerCase().includes(
-                                                    CATEGORY_SPECIALIZATION_MAP[ticket?.category] || ''
-                                                ) && (
-                                                    <span className="text-xs font-bold text-green-600">
-                                            ✓ Match
-                                        </span>
-                                                )}
+                                                <div>
+                                                    <p className="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                                                        {t.fullName}
+                                                    </p>
+                                                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                                                        {t.technicianSpecialization || 'General'}
+                                                    </p>
+                                                </div>
                                             </div>
-                                        ))}
-                                    </div>
+                                            {t.technicianSpecialization?.toLowerCase().includes(
+                                                CATEGORY_SPECIALIZATION_MAP[ticket?.category] || ''
+                                            ) && (
+                                                <span className="text-xs font-bold text-green-600">✓ Match</span>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>
@@ -798,12 +804,10 @@ const TicketDetail = () => {
                                                     {t.fullName?.charAt(0)}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-semibold"
-                                                       style={{ color: 'var(--color-text-primary)' }}>
+                                                    <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                                                         {t.fullName}
                                                     </p>
-                                                    <p className="text-xs"
-                                                       style={{ color: 'var(--color-text-secondary)' }}>
+                                                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                                                         {t.technicianSpecialization || 'General'} • {t.email}
                                                     </p>
                                                 </div>
