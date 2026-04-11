@@ -1,698 +1,793 @@
 // src/pages/admin/AdminBookingManagement.jsx
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Mail, CheckCircle, XCircle, Eye, Building, ChevronLeft, ChevronRight, AlertCircle, Loader2, Users, TrendingUp, Award, Clock as ClockIcon, Filter, X, Wrench } from 'lucide-react';
+import {
+    Calendar, Clock, User, Mail, CheckCircle, XCircle, Eye, Building,
+    ChevronLeft, ChevronRight, AlertCircle, Loader2, TrendingUp,
+    Filter, X, Wrench, RefreshCw
+} from 'lucide-react';
 import bookingService from '../../services/bookingService';
 import resourceService from '../../services/resourceService';
+import api from '../../services/api';
 import { toast } from 'react-toastify';
 import { format, addDays, subDays, isBefore, startOfDay } from 'date-fns';
 
 const AdminBookingManagement = () => {
-    const [resources, setResources] = useState([]);
-    const [selectedResource, setSelectedResource] = useState(null);
-    const [selectedDate, setSelectedDate] = useState(new Date());
-    const [calendarLoading, setCalendarLoading] = useState(false);
-    const [timeSlots, setTimeSlots] = useState([]);
-    const [stats, setStats] = useState({ totalRequests: 0, approved: 0, pending: 0, rejected: 0, cancelled: 0, maintenance: 0 });
 
-    const [filters, setFilters] = useState({
-        status: ''
-    });
-    const [selectedBooking, setSelectedBooking] = useState(null);
-    const [showModal, setShowModal] = useState(false);
-    const [adminAction, setAdminAction] = useState({ status: '', reason: '' });
-    const [processing, setProcessing] = useState(false);
-    const [showFilters, setShowFilters] = useState(false);
+    // ── Bookings-calendar state ───────────────────────────────────────────
+    const [resources,        setResources]        = useState([]);
+    const [selectedResource, setSelectedResource] = useState(null);
+    const [selectedDate,     setSelectedDate]     = useState(new Date());
+    const [calendarLoading,  setCalendarLoading]  = useState(false);
+    const [timeSlots,        setTimeSlots]        = useState([]);
+    const [stats,            setStats]            = useState({ totalRequests: 0, approved: 0, pending: 0, rejected: 0, cancelled: 0, maintenance: 0 });
+    const [filters,          setFilters]          = useState({ status: '' });
+    const [selectedBooking,  setSelectedBooking]  = useState(null);
+    const [showModal,        setShowModal]        = useState(false);
+    const [adminAction,      setAdminAction]      = useState({ status: '', reason: '' });
+    const [processing,       setProcessing]       = useState(false);
+    const [showFilters,      setShowFilters]      = useState(false);
+
+    // ── Tab ───────────────────────────────────────────────────────────────
+    const [activeTab, setActiveTab] = useState('bookings'); // 'bookings' | 'maintenance'
+
+    // ── Maintenance-tab state ─────────────────────────────────────────────
+    // maintenanceRecords = raw MaintenanceRequestDTO list from /maintenance/admin/all
+    const [maintenanceRecords,   setMaintenanceRecords]   = useState([]);
+    const [maintenanceLoading,   setMaintenanceLoading]   = useState(false);
+    const [maintenanceFilter,    setMaintenanceFilter]    = useState('ALL'); // ALL | PENDING | EXTENSION_REQUESTED | IN_PROGRESS | COMPLETED | REJECTED
+    const [selectedMR,           setSelectedMR]           = useState(null);  // selected MaintenanceRequestDTO
+    const [showMRModal,          setShowMRModal]          = useState(false);
+    const [mrAction,             setMRAction]             = useState({ approve: true, notes: '' });
+    const [mrProcessing,         setMRProcessing]         = useState(false);
 
     const START_TIME = 8;
-    const END_TIME = 17;
+    const END_TIME   = 17;
 
-    useEffect(() => {
-        fetchResources();
-    }, []);
+    useEffect(() => { fetchResources(); }, []);
+    useEffect(() => { if (selectedResource) fetchCalendarData(); }, [selectedResource, selectedDate, filters.status]);
+    useEffect(() => { if (activeTab === 'maintenance') fetchMaintenanceRecords(); }, [activeTab]);
 
-    useEffect(() => {
-        if (selectedResource) {
-            fetchCalendarData();
-        }
-    }, [selectedResource, selectedDate, filters.status]);
-
+    // ── Fetch resources ───────────────────────────────────────────────────
     const fetchResources = async () => {
         try {
             const data = await resourceService.listResources({ size: 100 });
             setResources(data.content || data);
-        } catch (error) {
-            console.error('Failed to fetch resources:', error);
+        } catch (err) { console.error(err); }
+    };
+
+    // ── Fetch all maintenance records (admin endpoint) ─────────────────────
+    // This returns MaintenanceRequestDTO objects which include maintenanceStatus,
+    // resourceName, technicianName, bookingId, etc.
+    const fetchMaintenanceRecords = async () => {
+        setMaintenanceLoading(true);
+        try {
+            const res = await api.get('/maintenance/admin/all');
+            setMaintenanceRecords(res.data || []);
+        } catch (err) {
+            console.error('Failed to fetch maintenance records:', err);
+            toast.error('Failed to load maintenance records');
+        } finally {
+            setMaintenanceLoading(false);
         }
     };
 
+    // ── Approve / Reject an extension request ─────────────────────────────
+    // Admin calls PATCH /maintenance/admin/{maintenanceId}
+    // To APPROVE extension  → set status = IN_PROGRESS (maintenance continues, extended dates already set)
+    // To REJECT  extension  → set status = IN_PROGRESS too (extension denied, but work continues until original end)
+    // The distinction is captured in the notes.
+    const handleMRAction = async () => {
+        if (!selectedMR) return;
+        setMRProcessing(true);
+        try {
+            // For EXTENSION_REQUESTED → set back to IN_PROGRESS either way
+            // (admin approval means "yes, keep going"; rejection means "wrap up by original date")
+            // For PENDING maintenance booking → use booking approval endpoint instead
+            if (selectedMR.maintenanceStatus === 'EXTENSION_REQUESTED') {
+                await api.patch(`/maintenance/admin/${selectedMR.id}`, {
+                    status: 'IN_PROGRESS',
+                    notes: mrAction.notes || (mrAction.approve ? 'Extension approved' : 'Extension rejected — complete by original end date'),
+                });
+                toast.success(`Extension ${mrAction.approve ? 'approved' : 'rejected'} — technician can now mark maintenance as completed.`);
+            } else {
+                // PENDING maintenance booking — approve/reject the booking itself
+                await bookingService.updateBookingStatus(selectedMR.bookingId, {
+                    status: mrAction.approve ? 'APPROVED' : 'REJECTED',
+                    reason: mrAction.notes,
+                });
+                toast.success(`Maintenance request ${mrAction.approve ? 'approved' : 'rejected'} successfully`);
+            }
+            setShowMRModal(false);
+            setSelectedMR(null);
+            setMRAction({ approve: true, notes: '' });
+            fetchMaintenanceRecords();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to update maintenance request');
+        } finally {
+            setMRProcessing(false);
+        }
+    };
+
+    // ── Calendar helpers ──────────────────────────────────────────────────
     const fetchCalendarData = async () => {
         if (!selectedResource) return;
-
         setCalendarLoading(true);
         try {
             const formattedDate = format(selectedDate, 'yyyy-MM-dd');
-
-            const params = {
-                resourceId: selectedResource.id,
-                bookingDate: formattedDate
-            };
-
-            if (filters.status && filters.status !== '') {
-                params.status = filters.status;
-            }
-
+            const params = { resourceId: selectedResource.id, bookingDate: formattedDate };
+            if (filters.status) params.status = filters.status;
             const data = await bookingService.getAllBookings(params);
             const bookingsData = data.content || data;
-
             generateTimeSlots(bookingsData);
             calculateStats(bookingsData);
-
-        } catch (error) {
-            console.error('Failed to load calendar data:', error);
+        } catch (err) {
+            console.error(err);
             toast.error('Failed to load calendar data');
         } finally {
             setCalendarLoading(false);
         }
     };
 
-    const formatTimeToHHMM = (timeStr) => {
-        if (!timeStr) return '';
-        if (typeof timeStr === 'string' && timeStr.includes(':')) {
-            return timeStr.substring(0, 5);
-        }
-        return timeStr;
-    };
+    const formatTimeToHHMM = (t) => (t && t.includes(':') ? t.substring(0, 5) : t || '');
 
-    const calculateStats = (bookingsData) => {
-        const total = bookingsData.length;
-        const approved = bookingsData.filter(b => b.status === 'APPROVED').length;
-        const pending = bookingsData.filter(b => b.status === 'PENDING').length;
-        const rejected = bookingsData.filter(b => b.status === 'REJECTED').length;
-        const cancelled = bookingsData.filter(b => b.status === 'CANCELLED').length;
-        const maintenance = bookingsData.filter(b => b.bookingType === 'MAINTENANCE').length;
-        setStats({ totalRequests: total, approved, pending, rejected, cancelled, maintenance });
-    };
+    const calculateStats = (data) => setStats({
+        totalRequests: data.length,
+        approved:    data.filter(b => b.status === 'APPROVED').length,
+        pending:     data.filter(b => b.status === 'PENDING').length,
+        rejected:    data.filter(b => b.status === 'REJECTED').length,
+        cancelled:   data.filter(b => b.status === 'CANCELLED').length,
+        maintenance: data.filter(b => b.bookingType === 'MAINTENANCE').length,
+    });
 
-    const isDateInPast = (date) => {
-        return isBefore(startOfDay(date), startOfDay(new Date()));
-    };
-
-    const isTimeSlotPast = (startTime, date) => {
-        if (isDateInPast(date)) {
-            return true;
-        }
+    const isDateInPast    = (d) => isBefore(startOfDay(d), startOfDay(new Date()));
+    const isTimeSlotPast  = (startTime, date) => {
+        if (isDateInPast(date)) return true;
         const now = new Date();
-        const slotDateTime = new Date(date);
-        const [hours, minutes] = startTime.split(':');
-        slotDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-        return slotDateTime < now;
+        const slot = new Date(date);
+        slot.setHours(parseInt(startTime.split(':')[0]), 0, 0, 0);
+        return slot < now;
     };
 
     const generateTimeSlots = (bookingsData) => {
         const slots = [];
-        const dateIsPast = isDateInPast(selectedDate);
-
         for (let hour = START_TIME; hour < END_TIME; hour++) {
             const startTime = `${hour.toString().padStart(2, '0')}:00`;
-            const endTime = `${(hour + 1).toString().padStart(2, '0')}:00`;
-
-            const slotBookings = bookingsData.filter(booking => {
-                const bookingStart = formatTimeToHHMM(booking.startTime);
-                const bookingEnd = formatTimeToHHMM(booking.endTime);
-                return bookingStart === startTime && bookingEnd === endTime;
-            });
-
-            const approvedCount = slotBookings.filter(b => b.status === 'APPROVED').length;
-            const pendingCount = slotBookings.filter(b => b.status === 'PENDING').length;
-            const rejectedCount = slotBookings.filter(b => b.status === 'REJECTED').length;
-            const cancelledCount = slotBookings.filter(b => b.status === 'CANCELLED').length;
-            const maintenanceCount = slotBookings.filter(b => b.bookingType === 'MAINTENANCE').length;
-            const totalCount = slotBookings.length;
-
-            const isPastSlot = dateIsPast || isTimeSlotPast(startTime, selectedDate);
-
-            let slotStatus = 'available';
-            if (approvedCount > 0) {
-                slotStatus = 'approved';
-            } else if (pendingCount > 0) {
-                slotStatus = 'pending';
-            }
-
+            const endTime   = `${(hour + 1).toString().padStart(2, '0')}:00`;
+            const slotBookings = bookingsData.filter(b =>
+                formatTimeToHHMM(b.startTime) === startTime && formatTimeToHHMM(b.endTime) === endTime
+            );
+            const isPastSlot = isDateInPast(selectedDate) || isTimeSlotPast(startTime, selectedDate);
+            const approvedCount   = slotBookings.filter(b => b.status === 'APPROVED').length;
+            const pendingCount    = slotBookings.filter(b => b.status === 'PENDING').length;
+            const rejectedCount   = slotBookings.filter(b => b.status === 'REJECTED').length;
+            const cancelledCount  = slotBookings.filter(b => b.status === 'CANCELLED').length;
+            const maintenanceCount= slotBookings.filter(b => b.bookingType === 'MAINTENANCE').length;
             slots.push({
-                startTime,
-                endTime,
-                hour,
-                bookings: slotBookings,
-                approvedCount,
-                pendingCount,
-                rejectedCount,
-                cancelledCount,
-                maintenanceCount,
-                totalCount,
-                status: slotStatus,
-                isPastSlot
+                startTime, endTime, bookings: slotBookings,
+                approvedCount, pendingCount, rejectedCount, cancelledCount, maintenanceCount,
+                totalCount: slotBookings.length,
+                status: approvedCount > 0 ? 'approved' : pendingCount > 0 ? 'pending' : 'available',
+                isPastSlot,
             });
         }
-
         setTimeSlots(slots);
     };
 
-    const handlePrevDay = () => {
-        setSelectedDate(subDays(selectedDate, 1));
-    };
-
-    const handleNextDay = () => {
-        setSelectedDate(addDays(selectedDate, 1));
-    };
+    const handlePrevDay = () => setSelectedDate(subDays(selectedDate, 1));
+    const handleNextDay = () => setSelectedDate(addDays(selectedDate, 1));
 
     const handleStatusUpdate = async () => {
         if (!selectedBooking) return;
         setProcessing(true);
         try {
-            await bookingService.updateBookingStatus(selectedBooking.id, {
-                status: adminAction.status,
-                reason: adminAction.reason
-            });
+            await bookingService.updateBookingStatus(selectedBooking.id, { status: adminAction.status, reason: adminAction.reason });
             toast.success(`Booking ${adminAction.status.toLowerCase()} successfully`);
-            setShowModal(false);
-            setSelectedBooking(null);
-            setAdminAction({ status: '', reason: '' });
+            setShowModal(false); setSelectedBooking(null); setAdminAction({ status: '', reason: '' });
             fetchCalendarData();
-        } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to update booking');
-        } finally {
-            setProcessing(false);
-        }
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to update booking');
+        } finally { setProcessing(false); }
     };
 
-    const openActionModal = (booking, status) => {
-        setSelectedBooking(booking);
-        setAdminAction({ status, reason: '' });
-        setShowModal(true);
-    };
+    // ── Style helpers ─────────────────────────────────────────────────────
+    const getStatusBadge = (s) => ({
+        PENDING:   'bg-amber-50 text-amber-700 border-amber-200',
+        APPROVED:  'bg-emerald-50 text-emerald-700 border-emerald-200',
+        REJECTED:  'bg-rose-50 text-rose-700 border-rose-200',
+        CANCELLED: 'bg-gray-100 text-gray-600 border-gray-200',
+    }[s] || 'bg-amber-50 text-amber-700 border-amber-200');
 
-    const handleFilterChange = (value) => {
-        setFilters({ status: value });
-        setShowFilters(false);
-    };
-
-    const clearFilters = () => {
-        setFilters({ status: '' });
-        setShowFilters(false);
-    };
-
-    const getStatusBadge = (status) => {
-        const styles = {
-            PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
-            APPROVED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-            REJECTED: 'bg-rose-50 text-rose-700 border-rose-200',
-            CANCELLED: 'bg-gray-100 text-gray-600 border-gray-200'
-        };
-        return styles[status] || styles.PENDING;
-    };
-
-    const getStatusIcon = (status) => {
-        switch (status) {
-            case 'APPROVED': return <CheckCircle className="w-3 h-3" />;
-            case 'REJECTED': return <XCircle className="w-3 h-3" />;
-            case 'CANCELLED': return <XCircle className="w-3 h-3" />;
-            default: return <Clock className="w-3 h-3" />;
-        }
-    };
+    const getStatusIcon = (s) => ({ APPROVED: <CheckCircle className="w-3 h-3" />, REJECTED: <XCircle className="w-3 h-3" />, CANCELLED: <XCircle className="w-3 h-3" /> }[s] || <Clock className="w-3 h-3" />);
 
     const getSlotClasses = (status, isPastSlot) => {
-        if (isPastSlot) return 'bg-gray-50 border-gray-200';
+        if (isPastSlot)          return 'bg-gray-50 border-gray-200';
         if (status === 'approved') return 'bg-gradient-to-r from-rose-50 to-white border-rose-200';
-        if (status === 'pending') return 'bg-gradient-to-r from-amber-50 to-white border-amber-200';
+        if (status === 'pending')  return 'bg-gradient-to-r from-amber-50 to-white border-amber-200';
         return 'bg-white border-gray-100 hover:border-primary/20';
     };
 
+    const getResourceIcon = (type) => ({ LAB: '🧪', LECTURE_HALL: '📚', MEETING_SPACE: '💼', STUDY_ROOM: '📖', EQUIPMENT: '🔧' }[type] || '🏢');
+    const getUserRoleBadge = (role) => ({ TECHNICIAN: 'bg-purple-100 text-purple-700', STAFF: 'bg-blue-100 text-blue-700', ADMIN: 'bg-red-100 text-red-700' }[role] || 'bg-green-100 text-green-700');
+    const getPriorityBadge = (p) => ({ CRITICAL: 'bg-red-100 text-red-800', HIGH: 'bg-orange-100 text-orange-800', MEDIUM: 'bg-yellow-100 text-yellow-800', LOW: 'bg-green-100 text-green-800' }[p] || 'bg-yellow-100 text-yellow-800');
+
+    // Maintenance record status badge
+    const getMRStatusConfig = (status) => ({
+        PENDING:              { cls: 'bg-amber-100 text-amber-700',  label: 'Pending Approval' },
+        APPROVED:             { cls: 'bg-emerald-100 text-emerald-700', label: 'Approved' },
+        IN_PROGRESS:          { cls: 'bg-blue-100 text-blue-700',    label: 'In Progress' },
+        EXTENSION_REQUESTED:  { cls: 'bg-purple-100 text-purple-700',label: 'Extension Requested' },
+        COMPLETED:            { cls: 'bg-green-100 text-green-700',  label: 'Completed' },
+        REJECTED:             { cls: 'bg-rose-100 text-rose-700',    label: 'Rejected' },
+    }[status] || { cls: 'bg-gray-100 text-gray-600', label: status });
+
+    // ── Maintenance tab: filter + stats ───────────────────────────────────
+    const mrStats = {
+        total:     maintenanceRecords.length,
+        pending:   maintenanceRecords.filter(r => r.maintenanceStatus === 'PENDING').length,
+        inProgress:maintenanceRecords.filter(r => r.maintenanceStatus === 'IN_PROGRESS').length,
+        extension: maintenanceRecords.filter(r => r.maintenanceStatus === 'EXTENSION_REQUESTED').length,
+        completed: maintenanceRecords.filter(r => r.maintenanceStatus === 'COMPLETED').length,
+        rejected:  maintenanceRecords.filter(r => r.maintenanceStatus === 'REJECTED').length,
+    };
+
+    const filteredMR = maintenanceRecords.filter(r =>
+        maintenanceFilter === 'ALL' || r.maintenanceStatus === maintenanceFilter
+    );
+
+    const MR_FILTERS = [
+        { key: 'ALL',                label: 'All',               active: 'bg-primary text-white',    inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200',    count: null },
+        { key: 'PENDING',            label: 'Pending',           active: 'bg-amber-500 text-white',  inactive: 'bg-amber-50 text-amber-600 hover:bg-amber-100',  count: mrStats.pending },
+        { key: 'IN_PROGRESS',        label: 'In Progress',       active: 'bg-blue-500 text-white',   inactive: 'bg-blue-50 text-blue-600 hover:bg-blue-100',     count: mrStats.inProgress },
+        { key: 'EXTENSION_REQUESTED',label: 'Extension Pending', active: 'bg-purple-500 text-white', inactive: 'bg-purple-50 text-purple-600 hover:bg-purple-100',count: mrStats.extension },
+        { key: 'COMPLETED',          label: 'Completed',         active: 'bg-green-500 text-white',  inactive: 'bg-green-50 text-green-600 hover:bg-green-100',  count: mrStats.completed },
+        { key: 'REJECTED',           label: 'Rejected',          active: 'bg-rose-500 text-white',   inactive: 'bg-rose-50 text-rose-600 hover:bg-rose-100',     count: mrStats.rejected },
+    ];
+
     const StatCard = ({ icon, title, value, color }) => (
-        <div className={`bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-all duration-300`}>
+        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-all">
             <div className="flex items-center justify-between">
                 <div>
                     <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">{title}</p>
                     <p className="text-2xl font-bold text-text-primary mt-1">{value}</p>
                 </div>
-                <div className={`w-10 h-10 rounded-xl bg-${color}-50 flex items-center justify-center`}>
-                    {icon}
-                </div>
+                <div className={`w-10 h-10 rounded-xl bg-${color}-50 flex items-center justify-center`}>{icon}</div>
             </div>
         </div>
     );
 
-    const getResourceIcon = (type) => {
-        const icons = {
-            LAB: '🧪',
-            LECTURE_HALL: '📚',
-            MEETING_SPACE: '💼',
-            STUDY_ROOM: '📖',
-            EQUIPMENT: '🔧'
-        };
-        return icons[type] || '🏢';
-    };
-
-    const getActiveFilterName = () => {
-        switch(filters.status) {
-            case 'PENDING': return 'Pending';
-            case 'APPROVED': return 'Approved';
-            case 'REJECTED': return 'Rejected';
-            case 'CANCELLED': return 'Cancelled';
-            default: return null;
-        }
-    };
-
-    const getUserRoleBadge = (role) => {
-        switch(role) {
-            case 'TECHNICIAN': return 'bg-purple-100 text-purple-700';
-            case 'STAFF': return 'bg-blue-100 text-blue-700';
-            case 'ADMIN': return 'bg-red-100 text-red-700';
-            default: return 'bg-green-100 text-green-700';
-        }
-    };
-
     return (
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
             <div className="max-w-7xl mx-auto p-6 space-y-6">
-                {/* Header Section */}
+
+                {/* ── Page header + tab bar ── */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="relative">
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
-                        <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-white to-primary/5">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div>
-                                    <div className="flex items-center gap-3 mb-2">
-                                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                                            <Calendar className="w-5 h-5 text-primary" />
-                                        </div>
-                                        <div>
-                                            <h1 className="text-2xl font-bold text-text-primary">Booking Management</h1>
-                                            <p className="text-sm text-text-secondary mt-0.5">
-                                                Manage and review all resource booking requests
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Quick Stats */}
-                                {selectedResource && stats.totalRequests > 0 && (
-                                    <div className="flex gap-2 flex-wrap">
-                                        <div className="px-3 py-1.5 bg-emerald-50 rounded-full">
-                                            <span className="text-xs font-semibold text-emerald-600">✓ {stats.approved} Approved</span>
-                                        </div>
-                                        <div className="px-3 py-1.5 bg-amber-50 rounded-full">
-                                            <span className="text-xs font-semibold text-amber-600">⏳ {stats.pending} Pending</span>
-                                        </div>
-                                        <div className="px-3 py-1.5 bg-rose-50 rounded-full">
-                                            <span className="text-xs font-semibold text-rose-600">✗ {stats.rejected} Rejected</span>
-                                        </div>
-                                        <div className="px-3 py-1.5 bg-gray-100 rounded-full">
-                                            <span className="text-xs font-semibold text-gray-600">✗ {stats.cancelled} Cancelled</span>
-                                        </div>
-                                        <div className="px-3 py-1.5 bg-purple-100 rounded-full">
-                                            <span className="text-xs font-semibold text-purple-600">🔧 {stats.maintenance} Maintenance</span>
-                                        </div>
-                                    </div>
-                                )}
+                    <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-white to-primary/5">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                <Calendar className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-bold text-text-primary">Booking Management</h1>
+                                <p className="text-sm text-text-secondary mt-0.5">Manage all resource booking and maintenance requests</p>
                             </div>
                         </div>
+                    </div>
 
-                        {/* Resource Selector with Enhanced Design */}
-                        <div className="p-6 border-b border-gray-100 bg-gray-50/30">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex-1">
-                                    <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">
-                                        Select Resource
-                                    </label>
-                                    <div className="relative">
-                                        <Building className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                        <select
-                                            value={selectedResource?.id || ''}
-                                            onChange={(e) => {
-                                                const resource = resources.find(r => r.id === e.target.value);
-                                                setSelectedResource(resource || null);
-                                                setTimeSlots([]);
-                                            }}
-                                            className="w-full md:w-96 pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                        >
-                                            <option value="">Choose a resource...</option>
-                                            {resources.map(resource => (
-                                                <option key={resource.id} value={resource.id}>
-                                                    {getResourceIcon(resource.type)} {resource.name} ({resource.type?.replace(/_/g, ' ')})
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-
-                                {/* Filter Toggle Button */}
-                                <div>
-                                    <button
-                                        onClick={() => setShowFilters(!showFilters)}
-                                        className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-                                            showFilters || filters.status
-                                                ? 'bg-primary text-white shadow-md shadow-primary/20'
-                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                        }`}
-                                    >
-                                        <Filter className="w-4 h-4" />
-                                        <span>Filters</span>
-                                        {filters.status && (
-                                            <span className="ml-1 w-5 h-5 bg-white/20 rounded-full text-xs flex items-center justify-center">
-                                                1
-                                            </span>
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Filter Panel */}
-                            {showFilters && (
-                                <div className="mt-4 p-4 bg-white rounded-xl border border-gray-100 animate-in slide-in-from-top-2 duration-200">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h4 className="text-sm font-semibold text-text-primary">Filter by Status</h4>
-                                        {filters.status && (
-                                            <button
-                                                onClick={clearFilters}
-                                                className="text-xs text-primary hover:text-primary-hover flex items-center gap-1"
-                                            >
-                                                <X className="w-3 h-3" /> Clear all
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="flex flex-wrap gap-3">
-                                        <button
-                                            onClick={() => handleFilterChange('')}
-                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                                !filters.status
-                                                    ? 'bg-primary text-white shadow-sm'
-                                                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                                            }`}
-                                        >
-                                            All Status
-                                        </button>
-                                        <button
-                                            onClick={() => handleFilterChange('PENDING')}
-                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                                filters.status === 'PENDING'
-                                                    ? 'bg-amber-500 text-white shadow-sm'
-                                                    : 'bg-amber-50 text-amber-600 hover:bg-amber-100'
-                                            }`}
-                                        >
-                                            ⏳ Pending
-                                        </button>
-                                        <button
-                                            onClick={() => handleFilterChange('APPROVED')}
-                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                                filters.status === 'APPROVED'
-                                                    ? 'bg-emerald-500 text-white shadow-sm'
-                                                    : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                                            }`}
-                                        >
-                                            ✓ Approved
-                                        </button>
-                                        <button
-                                            onClick={() => handleFilterChange('REJECTED')}
-                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                                filters.status === 'REJECTED'
-                                                    ? 'bg-rose-500 text-white shadow-sm'
-                                                    : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
-                                            }`}
-                                        >
-                                            ✗ Rejected
-                                        </button>
-                                        <button
-                                            onClick={() => handleFilterChange('CANCELLED')}
-                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                                filters.status === 'CANCELLED'
-                                                    ? 'bg-gray-500 text-white shadow-sm'
-                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                            }`}
-                                        >
-                                            ✗ Cancelled
-                                        </button>
-                                    </div>
-                                </div>
+                    {/* Tab bar */}
+                    <div className="flex border-b border-gray-100">
+                        <button
+                            onClick={() => setActiveTab('bookings')}
+                            className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold border-b-2 transition-all ${activeTab === 'bookings' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                        >
+                            <Calendar className="w-4 h-4" /> Bookings Calendar
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('maintenance')}
+                            className={`relative flex items-center gap-2 px-6 py-3 text-sm font-semibold border-b-2 transition-all ${activeTab === 'maintenance' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                        >
+                            <Wrench className="w-4 h-4" /> Maintenance Requests
+                            {/* Dot if there are pending/extension items */}
+                            {(mrStats.pending > 0 || mrStats.extension > 0) && (
+                                <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-full bg-amber-500 text-white">
+                                    {mrStats.pending + mrStats.extension}
+                                </span>
                             )}
-
-                            {/* Active Filter Badge */}
-                            {filters.status && (
-                                <div className="mt-3 flex items-center gap-2">
-                                    <div className="px-3 py-1.5 bg-primary/10 rounded-full">
-                                        <span className="text-xs font-medium text-primary">
-                                            Showing: {getActiveFilterName()} bookings
-                                        </span>
-                                    </div>
-                                    <button
-                                        onClick={clearFilters}
-                                        className="text-xs text-gray-400 hover:text-gray-600 transition"
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+                        </button>
                     </div>
                 </div>
 
-                {/* Stats Cards - Only show when resource selected */}
-                {selectedResource && stats.totalRequests > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-                        <StatCard icon={<TrendingUp className="w-5 h-5 text-primary" />} title="Total Requests" value={stats.totalRequests} color="primary" />
-                        <StatCard icon={<CheckCircle className="w-5 h-5 text-emerald-500" />} title="Approved" value={stats.approved} color="emerald" />
-                        <StatCard icon={<ClockIcon className="w-5 h-5 text-amber-500" />} title="Pending" value={stats.pending} color="amber" />
-                        <StatCard icon={<XCircle className="w-5 h-5 text-rose-500" />} title="Rejected" value={stats.rejected} color="rose" />
-                        <StatCard icon={<XCircle className="w-5 h-5 text-gray-500" />} title="Cancelled" value={stats.cancelled} color="gray" />
-                        <StatCard icon={<Wrench className="w-5 h-5 text-purple-500" />} title="Maintenance" value={stats.maintenance} color="purple" />
-                    </div>
-                )}
-
-                {/* Calendar Container */}
-                {selectedResource ? (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                        {/* Calendar Header with Date Navigation */}
-                        <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                                        <span className="text-2xl">{getResourceIcon(selectedResource.type)}</span>
+                {/* ════════════════════════════════════════════
+                    TAB: BOOKINGS CALENDAR
+                ════════════════════════════════════════════ */}
+                {activeTab === 'bookings' && (
+                    <>
+                        {/* Resource selector + filters */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                            <div className="p-6 border-b border-gray-100 bg-gray-50/30">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">Select Resource</label>
+                                        <div className="relative">
+                                            <Building className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            <select
+                                                value={selectedResource?.id || ''}
+                                                onChange={(e) => { const r = resources.find(r => r.id === e.target.value); setSelectedResource(r || null); setTimeSlots([]); }}
+                                                className="w-full md:w-96 pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                            >
+                                                <option value="">Choose a resource...</option>
+                                                {resources.map(r => <option key={r.id} value={r.id}>{getResourceIcon(r.type)} {r.name} ({r.type?.replace(/_/g, ' ')})</option>)}
+                                            </select>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h2 className="text-xl font-bold text-text-primary">{selectedResource.name}</h2>
-                                        <p className="text-xs text-text-secondary">{selectedResource.type?.replace(/_/g, ' ')} • Capacity: {selectedResource.capacity} • {selectedResource.location}</p>
-                                    </div>
+                                    <button
+                                        onClick={() => setShowFilters(!showFilters)}
+                                        className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${showFilters || filters.status ? 'bg-primary text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                    >
+                                        <Filter className="w-4 h-4" /> Filters
+                                        {filters.status && <span className="ml-1 w-5 h-5 bg-white/20 rounded-full text-xs flex items-center justify-center">1</span>}
+                                    </button>
                                 </div>
-
-                                <div className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 p-1 shadow-sm">
-                                    <button onClick={handlePrevDay} className="p-2 hover:bg-gray-50 rounded-lg transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
-                                    <div className="px-4 py-1 text-center">
-                                        <p className="text-sm font-semibold text-text-primary">{format(selectedDate, 'EEEE')}</p>
-                                        <p className="text-xs text-text-secondary">{format(selectedDate, 'MMM d, yyyy')}</p>
-                                        {isDateInPast(selectedDate) && <p className="text-[10px] text-gray-400 mt-0.5">Past Date - View Only</p>}
+                                {showFilters && (
+                                    <div className="mt-4 p-4 bg-white rounded-xl border border-gray-100">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h4 className="text-sm font-semibold text-text-primary">Filter by Status</h4>
+                                            {filters.status && <button onClick={() => { setFilters({ status: '' }); setShowFilters(false); }} className="text-xs text-primary flex items-center gap-1"><X className="w-3 h-3" /> Clear</button>}
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {[['', 'All Status'], ['PENDING', '⏳ Pending'], ['APPROVED', '✓ Approved'], ['REJECTED', '✗ Rejected'], ['CANCELLED', '✗ Cancelled']].map(([val, label]) => (
+                                                <button key={val} onClick={() => { setFilters({ status: val }); setShowFilters(false); }}
+                                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filters.status === val ? 'bg-primary text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                                                    {label}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <button onClick={handleNextDay} className="p-2 hover:bg-gray-50 rounded-lg transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
-                                </div>
-                            </div>
-
-                            {/* Legend */}
-                            <div className="flex flex-wrap items-center gap-4 mt-5 pt-2">
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-white border border-gray-300 rounded"></div><span className="text-xs text-text-secondary">Available (Future)</span></div>
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-100 border border-amber-200 rounded"></div><span className="text-xs text-text-secondary">Pending Requests</span></div>
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-rose-100 border border-rose-200 rounded"></div><span className="text-xs text-text-secondary">Approved Bookings</span></div>
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded"></div><span className="text-xs text-text-secondary">Cancelled/Rejected</span></div>
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-purple-100 border border-purple-200 rounded"></div><span className="text-xs text-text-secondary">Maintenance Request</span></div>
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-gray-200 border border-gray-300 rounded"></div><span className="text-xs text-text-secondary">Past Time Slots</span></div>
-                                {filters.status && filters.status !== '' && (<div className="ml-auto"><div className="px-3 py-1 bg-primary/10 rounded-full"><span className="text-xs text-primary font-medium">Filtered: {getActiveFilterName()}</span></div></div>)}
+                                )}
                             </div>
                         </div>
 
-                        {/* Time Slots */}
-                        <div className="p-6">
-                            {calendarLoading ? (
-                                <div className="flex flex-col items-center justify-center py-16"><Loader2 className="w-10 h-10 text-primary animate-spin mb-3" /><p className="text-text-secondary text-sm">Loading bookings...</p></div>
-                            ) : timeSlots.length === 0 ? (
-                                <div className="text-center py-16"><div className="w-20 h-20 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Clock className="w-10 h-10 text-gray-300" /></div><h3 className="text-lg font-semibold text-text-primary mb-1">No Time Slots Available</h3><p className="text-sm text-text-secondary">Bookings are available from 8:00 AM to 5:00 PM</p></div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {timeSlots.map((slot, idx) => (
-                                        <div key={idx} className={`border rounded-xl overflow-hidden transition-all duration-300 hover:shadow-md ${getSlotClasses(slot.status, slot.isPastSlot)} ${slot.isPastSlot ? 'opacity-80' : ''}`}>
-                                            {/* Slot Header */}
-                                            <div className={`px-5 py-3 border-b flex items-center justify-between flex-wrap gap-2 ${slot.isPastSlot ? 'bg-gray-100' : 'bg-gray-50/50'}`}>
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-white border border-gray-100 flex items-center justify-center shadow-sm"><Clock className="w-4 h-4 text-primary" /></div>
-                                                    <div>
-                                                        <span className="text-base font-semibold text-text-primary">{slot.startTime} - {slot.endTime}</span>
-                                                        {slot.totalCount > 0 && (<span className="ml-2 text-xs text-text-secondary">({slot.totalCount} request{slot.totalCount !== 1 ? 's' : ''})</span>)}
-                                                        {slot.isPastSlot && (<span className="ml-2 text-xs text-gray-400">(Past time slot)</span>)}
-                                                    </div>
-                                                </div>
-                                                {slot.totalCount > 0 && (
-                                                    <div className="flex gap-2 flex-wrap">
-                                                        {slot.approvedCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg text-xs font-medium text-emerald-600"><CheckCircle className="w-3 h-3" />{slot.approvedCount}</span>)}
-                                                        {slot.pendingCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-lg text-xs font-medium text-amber-600"><Clock className="w-3 h-3" />{slot.pendingCount}</span>)}
-                                                        {slot.rejectedCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 rounded-lg text-xs font-medium text-rose-600"><XCircle className="w-3 h-3" />{slot.rejectedCount}</span>)}
-                                                        {slot.cancelledCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-600"><XCircle className="w-3 h-3" />{slot.cancelledCount}</span>)}
-                                                        {slot.maintenanceCount > 0 && (<span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 rounded-lg text-xs font-medium text-purple-600"><Wrench className="w-3 h-3" />{slot.maintenanceCount}</span>)}
-                                                    </div>
-                                                )}
+                        {/* Stats */}
+                        {selectedResource && stats.totalRequests > 0 && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                                <StatCard icon={<TrendingUp className="w-5 h-5 text-primary" />}      title="Total"       value={stats.totalRequests} color="primary" />
+                                <StatCard icon={<CheckCircle className="w-5 h-5 text-emerald-500" />}  title="Approved"    value={stats.approved}      color="emerald" />
+                                <StatCard icon={<Clock className="w-5 h-5 text-amber-500" />}          title="Pending"     value={stats.pending}       color="amber" />
+                                <StatCard icon={<XCircle className="w-5 h-5 text-rose-500" />}         title="Rejected"    value={stats.rejected}      color="rose" />
+                                <StatCard icon={<XCircle className="w-5 h-5 text-gray-500" />}         title="Cancelled"   value={stats.cancelled}     color="gray" />
+                                <StatCard icon={<Wrench className="w-5 h-5 text-purple-500" />}        title="Maintenance" value={stats.maintenance}   color="purple" />
+                            </div>
+                        )}
+
+                        {/* Calendar */}
+                        {selectedResource ? (
+                            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                                                <span className="text-2xl">{getResourceIcon(selectedResource.type)}</span>
                                             </div>
-
-                                            {/* Slot Bookings */}
-                                            <div className="p-4 space-y-3">
-                                                {slot.bookings.length > 0 ? (
-                                                    slot.bookings.map(booking => (
-                                                        <div key={booking.id} className={`group bg-white rounded-lg border p-4 hover:shadow-md transition-all duration-200 ${slot.isPastSlot ? 'border-gray-100' : 'border-gray-100 hover:border-primary/20'}`}>
-                                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                                                <div className="flex-1">
-                                                                    <div className="flex items-start gap-3">
-                                                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0"><User className="w-5 h-5 text-primary" /></div>
-                                                                        <div className="flex-1">
-                                                                            <div className="flex items-center gap-2 flex-wrap mb-1">
-                                                                                <h4 className="text-sm font-semibold text-text-primary">{booking.userFullName}</h4>
-                                                                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getUserRoleBadge(booking.userRole)}`}>{booking.userRole}</span>
-                                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(booking.status)}`}>{getStatusIcon(booking.status)}<span>{booking.status}</span></span>
-                                                                            </div>
-                                                                            <p className="text-xs text-text-secondary flex items-center gap-1 mb-2"><Mail className="w-3 h-3" />{booking.userEmail}</p>
-
-                                                                            {/* Maintenance Request Badge and Details */}
-                                                                            {booking.bookingType === 'MAINTENANCE' && (
-                                                                                <div className="mt-2 p-3 bg-purple-50 rounded-lg border border-purple-200">
-                                                                                    <div className="flex items-center gap-2 mb-2">
-                                                                                        <Wrench className="w-4 h-4 text-purple-600" />
-                                                                                        <span className="text-xs font-bold text-purple-700 uppercase">Maintenance Request</span>
-                                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                                                                                            booking.priority === 'CRITICAL' ? 'bg-red-200 text-red-800' :
-                                                                                                booking.priority === 'HIGH' ? 'bg-orange-200 text-orange-800' :
-                                                                                                    booking.priority === 'MEDIUM' ? 'bg-yellow-200 text-yellow-800' :
-                                                                                                        'bg-green-200 text-green-800'
-                                                                                        }`}>
-                                                                                            {booking.priority}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                    <p className="text-sm text-text-primary">{booking.issueDescription}</p>
-                                                                                </div>
-                                                                            )}
-
-                                                                            {booking.purpose && !booking.issueDescription && (
-                                                                                <div className="mt-2 p-2 bg-gray-50 rounded-lg"><p className="text-sm text-text-primary">📝 {booking.purpose}</p></div>
-                                                                            )}
-                                                                            {booking.expectedAttendees && (<p className="text-xs text-text-secondary mt-1">👥 {booking.expectedAttendees} attendees</p>)}
-                                                                            <p className="text-xs text-text-secondary mt-2">Requested: {format(new Date(booking.createdAt), 'MMM d, h:mm a')}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* Action Buttons */}
-                                                                <div className="flex items-center gap-2 md:border-l md:border-gray-100 md:pl-4">
-                                                                    {booking.status === 'PENDING' && !slot.isPastSlot ? (
-                                                                        <>
-                                                                            <button onClick={() => openActionModal(booking, 'APPROVED')} className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105 transition-all duration-200" title="Approve Booking"><CheckCircle className="w-5 h-5" /></button>
-                                                                            <button onClick={() => openActionModal(booking, 'REJECTED')} className="p-2.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105 transition-all duration-200" title="Reject Booking"><XCircle className="w-5 h-5" /></button>
-                                                                        </>
-                                                                    ) : (
-                                                                        <div className="text-xs text-gray-400 px-2">
-                                                                            {booking.status === 'APPROVED' ? 'Approved' : booking.status === 'REJECTED' ? 'Rejected' : booking.status === 'CANCELLED' ? 'Cancelled' : slot.isPastSlot ? 'Past Booking' : 'Completed'}
-                                                                        </div>
-                                                                    )}
-                                                                    <button onClick={() => { setSelectedBooking(booking); setShowModal(true); }} className="p-2.5 rounded-xl bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-primary transition-all duration-200" title="View Details"><Eye className="w-5 h-5" /></button>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <div className="text-center py-6">
-                                                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-full">
-                                                            {slot.isPastSlot ? (<><Clock className="w-4 h-4 text-gray-400" /><span className="text-sm text-text-secondary">Past time slot - No bookings</span></>) : (<><CheckCircle className="w-4 h-4 text-green-500" /><span className="text-sm text-text-secondary">Available for booking</span></>)}
-                                                        </div>
-                                                    </div>
-                                                )}
+                                            <div>
+                                                <h2 className="text-xl font-bold text-text-primary">{selectedResource.name}</h2>
+                                                <p className="text-xs text-text-secondary">{selectedResource.type?.replace(/_/g, ' ')} • Cap: {selectedResource.capacity} • {selectedResource.location}</p>
                                             </div>
                                         </div>
+                                        <div className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 p-1 shadow-sm">
+                                            <button onClick={handlePrevDay} className="p-2 hover:bg-gray-50 rounded-lg transition"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
+                                            <div className="px-4 py-1 text-center">
+                                                <p className="text-sm font-semibold text-text-primary">{format(selectedDate, 'EEEE')}</p>
+                                                <p className="text-xs text-text-secondary">{format(selectedDate, 'MMM d, yyyy')}</p>
+                                                {isDateInPast(selectedDate) && <p className="text-[10px] text-gray-400">Past — View Only</p>}
+                                            </div>
+                                            <button onClick={handleNextDay} className="p-2 hover:bg-gray-50 rounded-lg transition"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="p-6">
+                                    {calendarLoading ? (
+                                        <div className="flex flex-col items-center justify-center py-16"><Loader2 className="w-10 h-10 text-primary animate-spin mb-3" /><p className="text-text-secondary text-sm">Loading...</p></div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {timeSlots.map((slot, idx) => (
+                                                <div key={idx} className={`border rounded-xl overflow-hidden transition-all hover:shadow-md ${getSlotClasses(slot.status, slot.isPastSlot)}`}>
+                                                    <div className={`px-5 py-3 border-b flex items-center justify-between flex-wrap gap-2 ${slot.isPastSlot ? 'bg-gray-100' : 'bg-gray-50/50'}`}>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-lg bg-white border border-gray-100 flex items-center justify-center"><Clock className="w-4 h-4 text-primary" /></div>
+                                                            <span className="text-base font-semibold text-text-primary">{slot.startTime} - {slot.endTime}</span>
+                                                            {slot.totalCount > 0 && <span className="text-xs text-text-secondary">({slot.totalCount})</span>}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            {slot.approvedCount  > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg text-xs font-medium text-emerald-600"><CheckCircle className="w-3 h-3" />{slot.approvedCount}</span>}
+                                                            {slot.pendingCount   > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-lg text-xs font-medium text-amber-600"><Clock className="w-3 h-3" />{slot.pendingCount}</span>}
+                                                            {slot.rejectedCount  > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 rounded-lg text-xs font-medium text-rose-600"><XCircle className="w-3 h-3" />{slot.rejectedCount}</span>}
+                                                            {slot.maintenanceCount>0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 rounded-lg text-xs font-medium text-purple-600"><Wrench className="w-3 h-3" />{slot.maintenanceCount}</span>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4 space-y-3">
+                                                        {slot.bookings.length > 0 ? slot.bookings.map(booking => (
+                                                            <div key={booking.id} className="bg-white rounded-lg border p-4 hover:shadow-md transition border-gray-100 hover:border-primary/20">
+                                                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                                    <div className="flex-1">
+                                                                        <div className="flex items-start gap-3">
+                                                                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0"><User className="w-5 h-5 text-primary" /></div>
+                                                                            <div className="flex-1">
+                                                                                <div className="flex items-center gap-2 flex-wrap mb-1">
+                                                                                    <h4 className="text-sm font-semibold text-text-primary">{booking.userFullName}</h4>
+                                                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getUserRoleBadge(booking.userRole)}`}>{booking.userRole}</span>
+                                                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(booking.status)}`}>{getStatusIcon(booking.status)}<span>{booking.status}</span></span>
+                                                                                </div>
+                                                                                <p className="text-xs text-text-secondary flex items-center gap-1 mb-2"><Mail className="w-3 h-3" />{booking.userEmail}</p>
+                                                                                {booking.bookingType === 'MAINTENANCE' && booking.issueDescription && (
+                                                                                    <div className="mt-2 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                                                                        <div className="flex items-center gap-2 mb-1"><Wrench className="w-4 h-4 text-purple-600" /><span className="text-xs font-bold text-purple-700 uppercase">Maintenance</span>{booking.priority && <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getPriorityBadge(booking.priority)}`}>{booking.priority}</span>}</div>
+                                                                                        <p className="text-sm text-text-primary">{booking.issueDescription}</p>
+                                                                                    </div>
+                                                                                )}
+                                                                                {booking.purpose && !booking.issueDescription && <div className="mt-2 p-2 bg-gray-50 rounded-lg"><p className="text-sm text-text-primary">📝 {booking.purpose}</p></div>}
+                                                                                <p className="text-xs text-text-secondary mt-2">Requested: {format(new Date(booking.createdAt), 'MMM d, h:mm a')}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 md:border-l md:border-gray-100 md:pl-4">
+                                                                        {booking.status === 'PENDING' && !slot.isPastSlot ? (
+                                                                            <>
+                                                                                <button onClick={() => { setSelectedBooking(booking); setAdminAction({ status: 'APPROVED', reason: '' }); setShowModal(true); }} className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105 transition-all" title="Approve"><CheckCircle className="w-5 h-5" /></button>
+                                                                                <button onClick={() => { setSelectedBooking(booking); setAdminAction({ status: 'REJECTED', reason: '' }); setShowModal(true); }} className="p-2.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105 transition-all" title="Reject"><XCircle className="w-5 h-5" /></button>
+                                                                            </>
+                                                                        ) : <div className="text-xs text-gray-400 px-2">{booking.status}</div>}
+                                                                        <button onClick={() => { setSelectedBooking(booking); setAdminAction({ status: '', reason: '' }); setShowModal(true); }} className="p-2.5 rounded-xl bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-primary transition-all" title="View"><Eye className="w-5 h-5" /></button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )) : (
+                                                            <div className="text-center py-6">
+                                                                <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-full">
+                                                                    {slot.isPastSlot ? <><Clock className="w-4 h-4 text-gray-400" /><span className="text-sm text-text-secondary">Past time slot</span></> : <><CheckCircle className="w-4 h-4 text-green-500" /><span className="text-sm text-text-secondary">Available for booking</span></>}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                                <div className="p-16 text-center">
+                                    <div className="w-24 h-24 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl flex items-center justify-center mx-auto mb-5"><Calendar className="w-12 h-12 text-primary" /></div>
+                                    <h3 className="text-xl font-bold text-text-primary mb-2">Select a Resource</h3>
+                                    <p className="text-text-secondary max-w-md mx-auto">Choose a resource from the dropdown above to view and manage bookings</p>
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {/* ════════════════════════════════════════════
+                    TAB: MAINTENANCE REQUESTS
+                ════════════════════════════════════════════ */}
+                {activeTab === 'maintenance' && (
+                    <>
+                        {/* Stats row */}
+                        {maintenanceRecords.length > 0 && (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                                <StatCard icon={<TrendingUp className="w-5 h-5 text-primary" />}       title="Total"        value={mrStats.total}      color="primary" />
+                                <StatCard icon={<Clock className="w-5 h-5 text-amber-500" />}           title="Pending"      value={mrStats.pending}    color="amber" />
+                                <StatCard icon={<Wrench className="w-5 h-5 text-blue-500" />}           title="In Progress"  value={mrStats.inProgress} color="blue" />
+                                <StatCard icon={<RefreshCw className="w-5 h-5 text-purple-500" />}      title="Ext. Pending" value={mrStats.extension}  color="purple" />
+                                <StatCard icon={<CheckCircle className="w-5 h-5 text-green-500" />}     title="Completed"    value={mrStats.completed}  color="green" />
+                                <StatCard icon={<XCircle className="w-5 h-5 text-rose-500" />}          title="Rejected"     value={mrStats.rejected}   color="rose" />
+                            </div>
+                        )}
+
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                            {/* Header */}
+                            <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                                            <Wrench className="w-5 h-5 text-purple-600" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-bold text-text-primary">Maintenance Requests</h2>
+                                            <p className="text-sm text-text-secondary mt-0.5">
+                                                Approve pending requests and extension requests from technicians
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button onClick={fetchMaintenanceRecords} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-200 transition">
+                                        <RefreshCw className="w-4 h-4" /> Refresh
+                                    </button>
+                                </div>
+
+                                {/* Filter tabs */}
+                                <div className="flex flex-wrap gap-2 mt-4">
+                                    {MR_FILTERS.map(f => (
+                                        <button key={f.key} onClick={() => setMaintenanceFilter(f.key)}
+                                                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${maintenanceFilter === f.key ? f.active : f.inactive}`}>
+                                            {f.label}
+                                            {f.count != null && f.count > 0 && maintenanceFilter !== f.key && (
+                                                <span className="inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-full bg-white/70 text-current">{f.count}</span>
+                                            )}
+                                        </button>
                                     ))}
+                                </div>
+                            </div>
+
+                            {/* List */}
+                            {maintenanceLoading ? (
+                                <div className="flex flex-col items-center justify-center py-16"><Loader2 className="w-10 h-10 text-primary animate-spin mb-3" /><p className="text-text-secondary text-sm">Loading...</p></div>
+                            ) : filteredMR.length === 0 ? (
+                                <div className="p-16 text-center">
+                                    <div className="w-20 h-20 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Wrench className="w-10 h-10 text-purple-300" /></div>
+                                    <h3 className="text-lg font-semibold text-text-primary mb-1">No Maintenance Requests</h3>
+                                    <p className="text-sm text-text-secondary">No records match the current filter.</p>
+                                    {maintenanceFilter !== 'ALL' && <button onClick={() => setMaintenanceFilter('ALL')} className="mt-3 text-sm text-primary hover:underline">View all</button>}
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-gray-100">
+                                    {filteredMR.map((mr) => {
+                                        const statusCfg = getMRStatusConfig(mr.maintenanceStatus);
+                                        const needsAction = mr.maintenanceStatus === 'PENDING' || mr.maintenanceStatus === 'EXTENSION_REQUESTED';
+                                        const isExtension = mr.maintenanceStatus === 'EXTENSION_REQUESTED';
+
+                                        return (
+                                            <div key={mr.id} className={`p-6 hover:bg-gray-50/30 transition-colors ${needsAction ? 'border-l-4 border-l-amber-400' : ''}`}>
+                                                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                                                    <div className="flex-1 min-w-0">
+                                                        {/* Title row */}
+                                                        <div className="flex items-center gap-3 flex-wrap mb-2">
+                                                            <h3 className="text-lg font-bold text-text-primary">{mr.resourceName}</h3>
+                                                            {mr.priority && <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getPriorityBadge(mr.priority)}`}>{mr.priority}</span>}
+                                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusCfg.cls}`}>{statusCfg.label}</span>
+                                                            {needsAction && (
+                                                                <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 animate-pulse">
+                                                                    ⚡ Action Required
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Technician */}
+                                                        <div className="flex items-center gap-2 mb-3">
+                                                            <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0"><User className="w-3 h-3 text-purple-600" /></div>
+                                                            <span className="text-sm text-text-primary font-medium">{mr.technicianName}</span>
+                                                            <span className="text-xs text-text-secondary">· Technician</span>
+                                                        </div>
+
+                                                        {/* Issue */}
+                                                        {mr.issueDescription && (
+                                                            <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 mb-3">
+                                                                <p className="text-xs font-bold text-purple-700 uppercase tracking-wider mb-1">Issue</p>
+                                                                <p className="text-sm text-text-primary">{mr.issueDescription}</p>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Extension info */}
+                                                        {isExtension && (
+                                                            <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 mb-3">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <RefreshCw className="w-4 h-4 text-purple-600" />
+                                                                    <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">Extension Requested</p>
+                                                                </div>
+                                                                <p className="text-sm text-purple-800">
+                                                                    The technician needs <strong>{mr.extensionRequested} additional day{mr.extensionRequested !== 1 ? 's' : ''}</strong> to complete the maintenance.
+                                                                    {mr.extensionReason && <span> Reason: {mr.extensionReason}</span>}
+                                                                </p>
+                                                                <p className="text-xs text-purple-600 mt-1">
+                                                                    Approving will set the status back to <strong>In Progress</strong> so the technician can mark it as completed.
+                                                                    Rejecting also resumes in-progress status but signals the technician to wrap up.
+                                                                </p>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Dates */}
+                                                        <div className="flex flex-wrap gap-4 text-sm text-text-secondary">
+                                                            <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>{mr.bookingDate ? format(new Date(Array.isArray(mr.bookingDate) ? `${mr.bookingDate[0]}-${String(mr.bookingDate[1]).padStart(2,'0')}-${String(mr.bookingDate[2]).padStart(2,'0')}` : mr.bookingDate), 'EEEE, MMM d, yyyy') : '—'}</span></div>
+                                                            <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>{mr.startTime} – {mr.endTime}</span></div>
+                                                        </div>
+
+                                                        {/* Admin notes */}
+                                                        {mr.adminNotes && (
+                                                            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                                                <p className="text-xs font-semibold text-text-secondary">Admin notes:</p>
+                                                                <p className="text-sm text-text-primary mt-1">{mr.adminNotes}</p>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Timing */}
+                                                        {mr.startedAt && <p className="text-xs text-text-secondary mt-2">Started: {format(new Date(mr.startedAt), 'MMM d, h:mm a')}</p>}
+                                                        {mr.completedAt && <p className="text-xs text-text-secondary mt-1">Completed: {format(new Date(mr.completedAt), 'MMM d, h:mm a')}</p>}
+                                                    </div>
+
+                                                    {/* Action buttons */}
+                                                    <div className="flex flex-row lg:flex-col gap-2 flex-shrink-0">
+                                                        {needsAction && (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => { setSelectedMR(mr); setMRAction({ approve: true, notes: '' }); setShowMRModal(true); }}
+                                                                    className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-semibold hover:bg-emerald-100 transition border border-emerald-200"
+                                                                >
+                                                                    <CheckCircle className="w-4 h-4" />
+                                                                    {isExtension ? 'Approve Extension' : 'Approve'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => { setSelectedMR(mr); setMRAction({ approve: false, notes: '' }); setShowMRModal(true); }}
+                                                                    className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-sm font-semibold hover:bg-rose-100 transition border border-rose-200"
+                                                                >
+                                                                    <XCircle className="w-4 h-4" />
+                                                                    {isExtension ? 'Reject Extension' : 'Reject'}
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                        {!needsAction && (
+                                                            <div className={`px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 ${statusCfg.cls}`}>
+                                                                {mr.maintenanceStatus === 'COMPLETED' && <CheckCircle className="w-4 h-4" />}
+                                                                {mr.maintenanceStatus === 'IN_PROGRESS' && <Wrench className="w-4 h-4" />}
+                                                                {statusCfg.label}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
-                    </div>
-                ) : (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                        <div className="p-16 text-center">
-                            <div className="w-24 h-24 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl flex items-center justify-center mx-auto mb-5"><Calendar className="w-12 h-12 text-primary" /></div>
-                            <h3 className="text-xl font-bold text-text-primary mb-2">Select a Resource</h3>
-                            <p className="text-text-secondary max-w-md mx-auto">Choose a resource from the dropdown above to view and manage bookings in calendar view</p>
+                    </>
+                )}
+
+                {/* ── Booking action modal ── */}
+                {showModal && selectedBooking && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+                            <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                                <div className="flex items-center gap-4">
+                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${adminAction.status === 'APPROVED' ? 'bg-emerald-100' : adminAction.status === 'REJECTED' ? 'bg-rose-100' : 'bg-primary/10'}`}>
+                                        {adminAction.status === 'APPROVED' ? <CheckCircle className="w-6 h-6 text-emerald-600" /> : adminAction.status === 'REJECTED' ? <XCircle className="w-6 h-6 text-rose-600" /> : <Eye className="w-6 h-6 text-primary" />}
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl font-bold text-text-primary">{adminAction.status ? `${adminAction.status} Booking` : 'Booking Details'}</h3>
+                                        <p className="text-sm text-text-secondary">{selectedBooking.resourceName} • {selectedBooking.userFullName}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl">
+                                    <div><p className="text-xs font-bold text-text-secondary uppercase">Date</p><p className="text-base font-semibold text-text-primary mt-1">{format(new Date(selectedBooking.bookingDate), 'MMMM d, yyyy')}</p></div>
+                                    <div><p className="text-xs font-bold text-text-secondary uppercase">Time</p><p className="text-base font-semibold text-text-primary mt-1">{selectedBooking.startTime} - {selectedBooking.endTime}</p></div>
+                                </div>
+                                {selectedBooking.bookingType === 'MAINTENANCE' && selectedBooking.issueDescription && (
+                                    <div className="p-4 bg-purple-50 rounded-xl border border-purple-100">
+                                        <div className="flex items-center gap-2 mb-2"><Wrench className="w-4 h-4 text-purple-600" /><p className="text-xs font-bold text-purple-700 uppercase">Maintenance</p>{selectedBooking.priority && <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getPriorityBadge(selectedBooking.priority)}`}>{selectedBooking.priority}</span>}</div>
+                                        <p className="text-sm text-text-primary">{selectedBooking.issueDescription}</p>
+                                    </div>
+                                )}
+                                {selectedBooking.purpose && <div className="p-4 bg-amber-50 rounded-xl border border-amber-100"><p className="text-xs font-bold text-amber-700 uppercase mb-1">Purpose</p><p className="text-sm text-amber-800">{selectedBooking.purpose}</p></div>}
+                                {adminAction.status && (
+                                    <div>
+                                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Reason {adminAction.status === 'REJECTED' ? '(Required)' : '(Optional)'}</label>
+                                        <textarea value={adminAction.reason} onChange={(e) => setAdminAction({ ...adminAction, reason: e.target.value })} rows="3" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder={adminAction.status === 'REJECTED' ? 'Provide a reason...' : 'Optional notes'} />
+                                    </div>
+                                )}
+                            </div>
+                            <div className="p-6 border-t border-gray-100 flex gap-3">
+                                <button onClick={() => { setShowModal(false); setSelectedBooking(null); setAdminAction({ status: '', reason: '' }); }} className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+                                {adminAction.status && (
+                                    <button onClick={handleStatusUpdate} disabled={processing || (adminAction.status === 'REJECTED' && !adminAction.reason)} className={`flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition ${adminAction.status === 'APPROVED' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'} disabled:opacity-50`}>
+                                        {processing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : `Confirm ${adminAction.status}`}
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
 
-                {/* Action Modal */}
-                {showModal && selectedBooking && (
+                {/* ── Maintenance request action modal ── */}
+                {showMRModal && selectedMR && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-in fade-in duration-200">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-                            <div className="relative">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
-                                <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${adminAction.status === 'APPROVED' ? 'bg-emerald-100' : adminAction.status === 'REJECTED' ? 'bg-rose-100' : 'bg-primary/10'}`}>
-                                            {adminAction.status === 'APPROVED' ? (<CheckCircle className="w-6 h-6 text-emerald-600" />) : adminAction.status === 'REJECTED' ? (<XCircle className="w-6 h-6 text-rose-600" />) : (<Eye className="w-6 h-6 text-primary" />)}
-                                        </div>
-                                        <div>
-                                            <h3 className="text-xl font-bold text-text-primary">{adminAction.status ? `${adminAction.status} Booking` : 'Booking Details'}</h3>
-                                            <p className="text-sm text-text-secondary">{selectedBooking.resourceName} • {selectedBooking.userFullName}</p>
-                                        </div>
+                            <div className={`p-6 border-b border-gray-100 bg-gradient-to-r ${mrAction.approve ? 'from-emerald-50' : 'from-rose-50'} to-white`}>
+                                <div className="flex items-center gap-4">
+                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${mrAction.approve ? 'bg-emerald-100' : 'bg-rose-100'}`}>
+                                        {mrAction.approve ? <CheckCircle className="w-6 h-6 text-emerald-600" /> : <XCircle className="w-6 h-6 text-rose-600" />}
                                     </div>
-                                </div>
-                            </div>
-
-                            <div className="p-6 space-y-4">
-                                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl">
-                                    <div><p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Date</p><p className="text-base font-semibold text-text-primary mt-1">{format(new Date(selectedBooking.bookingDate), 'MMMM d, yyyy')}</p></div>
-                                    <div><p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Time</p><p className="text-base font-semibold text-text-primary mt-1">{selectedBooking.startTime} - {selectedBooking.endTime}</p></div>
-                                </div>
-
-                                <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
-                                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-1">Purpose</p>
-                                    <p className="text-sm text-amber-800">{selectedBooking.purpose || 'No purpose specified'}</p>
-                                </div>
-
-                                {selectedBooking.bookingType === 'MAINTENANCE' && selectedBooking.issueDescription && (
-                                    <div className="p-4 bg-purple-50 rounded-xl border border-purple-100">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <Wrench className="w-4 h-4 text-purple-600" />
-                                            <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">Maintenance Request</p>
-                                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                                                selectedBooking.priority === 'CRITICAL' ? 'bg-red-200 text-red-800' :
-                                                    selectedBooking.priority === 'HIGH' ? 'bg-orange-200 text-orange-800' :
-                                                        selectedBooking.priority === 'MEDIUM' ? 'bg-yellow-200 text-yellow-800' :
-                                                            'bg-green-200 text-green-800'
-                                            }`}>{selectedBooking.priority}</span>
-                                        </div>
-                                        <p className="text-sm text-text-primary">{selectedBooking.issueDescription}</p>
-                                    </div>
-                                )}
-
-                                {selectedBooking.expectedAttendees && (<div className="p-4 bg-gray-50 rounded-xl"><p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">Expected Attendees</p><p className="text-sm text-text-primary">{selectedBooking.expectedAttendees} people</p></div>)}
-
-                                {adminAction.status && (
                                     <div>
-                                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Reason {adminAction.status === 'REJECTED' ? '(Required)' : '(Optional)'}</label>
-                                        <textarea value={adminAction.reason} onChange={(e) => setAdminAction({ ...adminAction, reason: e.target.value })} rows="3" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder={adminAction.status === 'REJECTED' ? "Please provide a reason for rejection..." : "Add any additional notes (optional)"} required={adminAction.status === 'REJECTED'} />
+                                        <h3 className="text-xl font-bold text-text-primary">
+                                            {mrAction.approve ? 'Approve' : 'Reject'} {selectedMR.maintenanceStatus === 'EXTENSION_REQUESTED' ? 'Extension Request' : 'Maintenance Request'}
+                                        </h3>
+                                        <p className="text-sm text-text-secondary">{selectedMR.resourceName} · {selectedMR.technicianName}</p>
                                     </div>
-                                )}
-
-                                {!adminAction.status && selectedBooking.status === 'PENDING' && (
-                                    <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-xl border border-amber-100">
-                                        <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                                        <p className="text-sm text-amber-700">This booking is pending approval. Approving this booking will automatically reject all other pending bookings for the same time slot.</p>
-                                    </div>
-                                )}
+                                </div>
                             </div>
+                            <div className="p-6 space-y-4">
+                                {/* Details */}
+                                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl">
+                                    <div>
+                                        <p className="text-xs font-bold text-text-secondary uppercase">Date</p>
+                                        <p className="text-base font-semibold text-text-primary mt-1">
+                                            {mr => {
+                                                const d = selectedMR.bookingDate;
+                                                if (!d) return '—';
+                                                const dateStr = Array.isArray(d) ? `${d[0]}-${String(d[1]).padStart(2,'0')}-${String(d[2]).padStart(2,'0')}` : d;
+                                                return format(new Date(dateStr), 'MMMM d, yyyy');
+                                            }}
+                                            {(() => {
+                                                const d = selectedMR.bookingDate;
+                                                if (!d) return '—';
+                                                const dateStr = Array.isArray(d) ? `${d[0]}-${String(d[1]).padStart(2,'0')}-${String(d[2]).padStart(2,'0')}` : d;
+                                                return format(new Date(dateStr), 'MMMM d, yyyy');
+                                            })()}
+                                        </p>
+                                    </div>
+                                    <div><p className="text-xs font-bold text-text-secondary uppercase">Time</p><p className="text-base font-semibold text-text-primary mt-1">{selectedMR.startTime} – {selectedMR.endTime}</p></div>
+                                </div>
 
-                            <div className="p-6 border-t border-gray-100 flex gap-3">
-                                <button onClick={() => { setShowModal(false); setSelectedBooking(null); setAdminAction({ status: '', reason: '' }); }} className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all">Cancel</button>
-                                {adminAction.status && (
-                                    <button onClick={handleStatusUpdate} disabled={processing || (adminAction.status === 'REJECTED' && !adminAction.reason)} className={`flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all ${adminAction.status === 'APPROVED' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200' : 'bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200'} disabled:opacity-50 disabled:cursor-not-allowed`}>
-                                        {processing ? (<Loader2 className="w-5 h-5 animate-spin mx-auto" />) : (`Confirm ${adminAction.status}`)}
-                                    </button>
+                                {/* Issue */}
+                                {selectedMR.issueDescription && (
+                                    <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
+                                        <p className="text-xs font-bold text-purple-700 uppercase mb-1">Issue</p>
+                                        <p className="text-sm text-text-primary">{selectedMR.issueDescription}</p>
+                                    </div>
                                 )}
+
+                                {/* Extension details */}
+                                {selectedMR.maintenanceStatus === 'EXTENSION_REQUESTED' && (
+                                    <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
+                                        <div className="flex items-center gap-2 mb-1"><RefreshCw className="w-4 h-4 text-purple-600" /><p className="text-xs font-bold text-purple-700 uppercase">Extension Details</p></div>
+                                        <p className="text-sm text-purple-800">
+                                            Requesting <strong>{selectedMR.extensionRequested} additional day{selectedMR.extensionRequested !== 1 ? 's' : ''}</strong>.
+                                        </p>
+                                        {mrAction.approve ? (
+                                            <p className="text-xs text-emerald-700 mt-2 font-medium">✓ Approving will resume IN_PROGRESS status so the technician can mark it as completed.</p>
+                                        ) : (
+                                            <p className="text-xs text-rose-700 mt-2 font-medium">✗ Rejecting will also resume IN_PROGRESS — the technician should complete within the original timeframe.</p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Context banner */}
+                                {!selectedMR.maintenanceStatus?.includes('EXTENSION') && (
+                                    <div className={`p-3 rounded-xl border flex items-start gap-2 ${mrAction.approve ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
+                                        <AlertCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${mrAction.approve ? 'text-emerald-600' : 'text-rose-600'}`} />
+                                        <p className={`text-xs ${mrAction.approve ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                            {mrAction.approve
+                                                ? 'Approving will mark this resource for maintenance. The technician will be notified and can start maintenance at the scheduled time.'
+                                                : 'Rejecting will notify the technician. The resource will remain available for regular bookings.'}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Notes */}
+                                <div>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">
+                                        Notes {!mrAction.approve ? '(Required)' : '(Optional)'}
+                                    </label>
+                                    <textarea
+                                        value={mrAction.notes}
+                                        onChange={(e) => setMRAction({ ...mrAction, notes: e.target.value })}
+                                        rows="3"
+                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder={!mrAction.approve ? 'Please provide a reason for rejection...' : 'Optional notes for the technician'}
+                                    />
+                                </div>
+                            </div>
+                            <div className="p-6 border-t border-gray-100 flex gap-3">
+                                <button
+                                    onClick={() => { setShowMRModal(false); setSelectedMR(null); setMRAction({ approve: true, notes: '' }); }}
+                                    className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleMRAction}
+                                    disabled={mrProcessing || (!mrAction.approve && !mrAction.notes)}
+                                    className={`flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition disabled:opacity-50 ${mrAction.approve ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200' : 'bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200'}`}
+                                >
+                                    {mrProcessing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : `Confirm ${mrAction.approve ? 'Approval' : 'Rejection'}`}
+                                </button>
                             </div>
                         </div>
                     </div>

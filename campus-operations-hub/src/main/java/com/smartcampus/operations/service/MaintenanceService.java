@@ -14,4 +14,5 @@ public interface MaintenanceService {
     MaintenanceRequestDTO requestExtension(UUID bookingId, int days, String technicianEmail);
     List<MaintenanceRequestDTO> getTechnicianRequests(String technicianEmail);
     MaintenanceRequestDTO updateMaintenanceStatus(UUID maintenanceId, MaintenanceActionDTO action, String adminEmail);
+    List<MaintenanceRequestDTO> getAllMaintenanceRequests();
 }

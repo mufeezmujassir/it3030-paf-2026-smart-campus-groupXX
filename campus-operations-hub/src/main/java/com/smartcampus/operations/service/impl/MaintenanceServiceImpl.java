@@ -394,6 +394,19 @@ public class MaintenanceServiceImpl implements MaintenanceService {
         return mapToDTO(saved, booking, technician);
     }
 
+    @Override
+    public List<MaintenanceRequestDTO> getAllMaintenanceRequests() {
+        return maintenanceRequestRepository.findAll().stream()
+                .map(req -> {
+                    Booking booking = bookingRepository.findById(req.getBookingId()).orElse(null);
+                    User technician = booking != null
+                            ? userRepository.findById(req.getTechnicianId()).orElse(null)
+                            : null;
+                    return mapToDTO(req, booking, technician);
+                })
+                .collect(Collectors.toList());
+    }
+
     private void handleConflictingBookings(Resource resource, Booking maintenanceBooking) {
         List<Booking> conflictingBookings = bookingRepository.findAll().stream()
                 .filter(b -> b.getResourceId().equals(resource.getId()))

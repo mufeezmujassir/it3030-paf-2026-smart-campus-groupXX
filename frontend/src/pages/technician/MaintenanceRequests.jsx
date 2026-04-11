@@ -69,15 +69,110 @@ const MaintenanceRequests = () => {
         }
     };
 
-    // ─── Cancel helpers ────────────────────────────────────────────────
-    // A request can be cancelled only if:
-    //   • It is PENDING (not yet approved), OR
-    //   • It is APPROVED but maintenance has NOT yet been started (not IN_PROGRESS / COMPLETED)
-    const canCancel = (request) => {
-        const status = request.maintenanceStatus;
-        return status === 'PENDING' || status === 'APPROVED';
+    // ─── Build a real local Date from booking fields ─────────────────────
+    // bookingDate can be "YYYY-MM-DD" string or a Java LocalDate array [y, m, d]
+    // timeStr is "HH:MM" or "HH:MM:SS"
+    const buildScheduledStart = (bookingDate, timeStr) => {
+        const [h, m] = timeStr.split(':').map(Number);
+        let year, month, day;
+        if (Array.isArray(bookingDate)) {
+            [year, month, day] = [bookingDate[0], bookingDate[1] - 1, bookingDate[2]];
+        } else {
+            const parts = String(bookingDate).split('-').map(Number);
+            [year, month, day] = [parts[0], parts[1] - 1, parts[2]];
+        }
+        return new Date(year, month, day, h, m, 0, 0);
     };
 
+    // ─── Time-window logic ───────────────────────────────────────────────
+    // Grace window: scheduledStart - 15 min  →  scheduledStart + 30 min
+    const getWindowDates = (request) => {
+        const scheduled = buildScheduledStart(request.bookingDate, request.startTime);
+        const graceStart = new Date(scheduled.getTime() - 15 * 60 * 1000);
+        const graceEnd   = new Date(scheduled.getTime() + 30 * 60 * 1000);
+        return { scheduled, graceStart, graceEnd };
+    };
+
+    const isSameCalendarDay = (a, b) =>
+        a.getFullYear() === b.getFullYear() &&
+        a.getMonth()    === b.getMonth()    &&
+        a.getDate()     === b.getDate();
+
+    const canStartMaintenance = (request) => {
+        const now = new Date();
+        const { scheduled, graceStart, graceEnd } = getWindowDates(request);
+        return isSameCalendarDay(now, scheduled) && now >= graceStart && now <= graceEnd;
+    };
+
+    const getStartButtonStatus = (request) => {
+        const now = new Date();
+        const { scheduled, graceStart, graceEnd } = getWindowDates(request);
+
+        const todayMidnight   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const bookingMidnight = new Date(scheduled.getFullYear(), scheduled.getMonth(), scheduled.getDate());
+
+        // Future date
+        if (bookingMidnight > todayMidnight) {
+            return {
+                canStart: false,
+                message: `Maintenance scheduled for ${format(scheduled, 'MMM d, yyyy')} at ${format(scheduled, 'h:mm a')}. You can start between ${format(graceStart, 'h:mm a')} and ${format(graceEnd, 'h:mm a')} on that day.`,
+                variant: 'info',
+            };
+        }
+
+        // Past date
+        if (bookingMidnight < todayMidnight) {
+            return {
+                canStart: false,
+                message: `This maintenance window (${format(scheduled, 'MMM d, yyyy')} at ${format(scheduled, 'h:mm a')}) has already passed.`,
+                variant: 'error',
+            };
+        }
+
+        // Today — check time
+        if (now < graceStart) {
+            const minutesUntil = Math.ceil((graceStart.getTime() - now.getTime()) / 60000);
+            return {
+                canStart: false,
+                message: `Too early to start. You can begin at ${format(graceStart, 'h:mm a')} (in about ${minutesUntil} minute${minutesUntil !== 1 ? 's' : ''}). The window opens 15 minutes before the scheduled ${format(scheduled, 'h:mm a')} start.`,
+                variant: 'warning',
+            };
+        }
+
+        if (now > graceEnd) {
+            return {
+                canStart: false,
+                message: `The start window has closed. You needed to begin by ${format(graceEnd, 'h:mm a')} (30 minutes after the scheduled ${format(scheduled, 'h:mm a')} start).`,
+                variant: 'error',
+            };
+        }
+
+        // Within window
+        return {
+            canStart: true,
+            message: `Start window is open: ${format(graceStart, 'h:mm a')} – ${format(graceEnd, 'h:mm a')}. Click "Start Maintenance" to begin.`,
+            variant: 'success',
+        };
+    };
+
+    const getTimeStatusBadge = (request) => {
+        if (request.maintenanceStatus === 'CANCELLED') return { text: 'Cancelled', className: 'bg-gray-100 text-gray-600' };
+
+        const now = new Date();
+        const { scheduled, graceEnd } = getWindowDates(request);
+        const todayMidnight   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const bookingMidnight = new Date(scheduled.getFullYear(), scheduled.getMonth(), scheduled.getDate());
+
+        if (bookingMidnight > todayMidnight) return { text: 'Upcoming',           className: 'bg-blue-100 text-blue-700' };
+        if (bookingMidnight < todayMidnight) return { text: 'Expired',            className: 'bg-red-100 text-red-700' };
+
+        // Today
+        if (canStartMaintenance(request))    return { text: 'Ready to Start',     className: 'bg-green-100 text-green-700' };
+        if (now > graceEnd)                  return { text: 'Window Closed',      className: 'bg-red-100 text-red-700' };
+        return                                      { text: 'Waiting for Window', className: 'bg-yellow-100 text-yellow-700' };
+    };
+
+    // ─── Cancel helpers ──────────────────────────────────────────────────
     const openCancelConfirm = (request) => {
         setRequestToCancel(request);
         setShowCancelConfirm(true);
@@ -87,84 +182,19 @@ const MaintenanceRequests = () => {
         if (!requestToCancel) return;
         setProcessing(true);
         try {
-            // Re-use the existing booking cancel endpoint
             await api.delete(`/bookings/${requestToCancel.id}/cancel`);
             toast.success('Maintenance request cancelled successfully');
             setShowCancelConfirm(false);
             setRequestToCancel(null);
             fetchMaintenanceRequests();
         } catch (error) {
-            const msg = error.response?.data?.message || 'Failed to cancel maintenance request';
-            toast.error(msg);
+            toast.error(error.response?.data?.message || 'Failed to cancel maintenance request');
         } finally {
             setProcessing(false);
         }
     };
 
-    // ─── Time-window helpers (unchanged) ──────────────────────────────
-    const canStartMaintenance = (request) => {
-        const now = new Date();
-        const bookingDate = new Date(request.bookingDate);
-        const [startHour, startMinute] = request.startTime.split(':').map(Number);
-        const scheduledStart = new Date(bookingDate);
-        scheduledStart.setHours(startHour, startMinute, 0, 0);
-        const graceStart = new Date(scheduledStart);
-        graceStart.setMinutes(scheduledStart.getMinutes() - 15);
-        const graceEnd = new Date(scheduledStart);
-        graceEnd.setMinutes(scheduledStart.getMinutes() + 30);
-        const isTodayDate = bookingDate.toDateString() === now.toDateString();
-        return isTodayDate && now >= graceStart && now <= graceEnd;
-    };
-
-    const getStartButtonStatus = (request) => {
-        const now = new Date();
-        const bookingDate = new Date(request.bookingDate);
-        const [startHour, startMinute] = request.startTime.split(':').map(Number);
-        const scheduledStart = new Date(bookingDate);
-        scheduledStart.setHours(startHour, startMinute, 0, 0);
-        const isPastDate = bookingDate < new Date(new Date().setHours(0, 0, 0, 0));
-        const isFutureDate = bookingDate > new Date(new Date().setHours(0, 0, 0, 0));
-        if (isFutureDate) {
-            const graceStartF = new Date(scheduledStart);
-            graceStartF.setMinutes(scheduledStart.getMinutes() - 15);
-            const graceEndF = new Date(scheduledStart);
-            graceEndF.setMinutes(scheduledStart.getMinutes() + 30);
-            return { canStart: false, message: `Maintenance scheduled for ${format(bookingDate, 'MMM d, yyyy')} at ${request.startTime}. You can start between ${format(graceStartF, 'h:mm a')} and ${format(graceEndF, 'h:mm a')} on that day.`, variant: 'info' };
-        }
-        if (isPastDate) return { canStart: false, message: `This maintenance window (${format(bookingDate, 'MMM d, yyyy')} at ${request.startTime}) has passed.`, variant: 'error' };
-        const graceStart = new Date(scheduledStart);
-        graceStart.setMinutes(scheduledStart.getMinutes() - 15);
-        const graceEnd = new Date(scheduledStart);
-        graceEnd.setMinutes(scheduledStart.getMinutes() + 30);
-        if (now < graceStart) {
-            const minutesUntil = Math.ceil((graceStart - now) / 60000);
-            return { canStart: false, message: `Maintenance can be started at ${format(graceStart, 'h:mm a')} (in about ${minutesUntil} minutes). You have a 15-minute grace period before the scheduled time.`, variant: 'warning' };
-        }
-        if (now > graceEnd) return { canStart: false, message: `The maintenance window has ended. You had until ${format(graceEnd, 'h:mm a')} to start.`, variant: 'error' };
-        return { canStart: true, message: `You can start maintenance now (scheduled: ${request.startTime})`, variant: 'success' };
-    };
-
-    const getTimeStatusBadge = (request) => {
-        if (request.maintenanceStatus === 'CANCELLED') return { text: 'Cancelled', className: 'bg-gray-100 text-gray-600' };
-        const now = new Date();
-        const bookingDate = new Date(request.bookingDate);
-        const isTodayDate = bookingDate.toDateString() === now.toDateString();
-        const isPastDate = bookingDate < new Date(new Date().setHours(0, 0, 0, 0));
-        const isFutureDate = bookingDate > new Date(new Date().setHours(0, 0, 0, 0));
-        if (isFutureDate) return { text: 'Upcoming', className: 'bg-blue-100 text-blue-700' };
-        if (isPastDate) return { text: 'Expired', className: 'bg-red-100 text-red-700' };
-        if (isTodayDate && canStartMaintenance(request)) return { text: 'Ready to Start', className: 'bg-green-100 text-green-700' };
-        if (isTodayDate) {
-            const [sh, sm] = request.startTime.split(':').map(Number);
-            const sched = new Date(bookingDate); sched.setHours(sh, sm, 0, 0);
-            const ge = new Date(sched); ge.setMinutes(sched.getMinutes() + 30);
-            if (now > ge) return { text: 'Window Closed', className: 'bg-red-100 text-red-700' };
-            return { text: 'Waiting for Window', className: 'bg-yellow-100 text-yellow-700' };
-        }
-        return { text: 'Pending', className: 'bg-gray-100 text-gray-700' };
-    };
-
-    // ─── Action handlers (unchanged) ──────────────────────────────────
+    // ─── Action handlers ─────────────────────────────────────────────────
     const handleStartMaintenance = async (booking) => {
         setProcessing(true);
         try {
@@ -193,7 +223,7 @@ const MaintenanceRequests = () => {
 
     const handleRequestExtension = async () => {
         if (!selectedRequest || !extensionDays || extensionDays < 1) {
-            toast.error('Please enter valid number of days');
+            toast.error('Please enter a valid number of days');
             return;
         }
         setProcessing(true);
@@ -211,51 +241,54 @@ const MaintenanceRequests = () => {
         }
     };
 
-    // ─── Config helpers ────────────────────────────────────────────────
-    const getStatusConfig = (status) => {
-        const configs = {
-            PENDING: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', icon: <Clock className="w-4 h-4" />, label: 'Pending Approval', actions: ['cancel'] },
-            APPROVED: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', icon: <CheckCircle className="w-4 h-4" />, label: 'Approved — Ready to Start', actions: ['start', 'cancel'] },
-            IN_PROGRESS: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', icon: <Play className="w-4 h-4" />, label: 'In Progress', actions: ['complete', 'extend'] },
-            COMPLETED: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', icon: <CheckCircle className="w-4 h-4" />, label: 'Completed', actions: [] },
-            REJECTED: { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200', icon: <XCircle className="w-4 h-4" />, label: 'Rejected', actions: [] },
-            CANCELLED: { bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-200', icon: <Ban className="w-4 h-4" />, label: 'Cancelled', actions: [] },
-            EXTENSION_REQUESTED: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', icon: <RefreshCw className="w-4 h-4" />, label: 'Extension Requested', actions: ['complete'] },
-        };
-        return configs[status] || configs.PENDING;
-    };
+    // ─── Config helpers ──────────────────────────────────────────────────
+    const getStatusConfig = (status) => ({
+        PENDING:             { bg: 'bg-amber-100',  text: 'text-amber-700',  border: 'border-amber-200',  icon: <Clock className="w-4 h-4" />,      label: 'Pending Approval',         actions: ['cancel'] },
+        APPROVED:            { bg: 'bg-emerald-100',text: 'text-emerald-700',border: 'border-emerald-200',icon: <CheckCircle className="w-4 h-4" />,  label: 'Approved — Ready to Start', actions: ['start', 'cancel'] },
+        IN_PROGRESS:         { bg: 'bg-blue-100',   text: 'text-blue-700',   border: 'border-blue-200',   icon: <Play className="w-4 h-4" />,        label: 'In Progress',              actions: ['complete', 'extend'] },
+        COMPLETED:           { bg: 'bg-green-100',  text: 'text-green-700',  border: 'border-green-200',  icon: <CheckCircle className="w-4 h-4" />,  label: 'Completed',                actions: [] },
+        REJECTED:            { bg: 'bg-rose-100',   text: 'text-rose-700',   border: 'border-rose-200',   icon: <XCircle className="w-4 h-4" />,     label: 'Rejected',                 actions: [] },
+        CANCELLED:           { bg: 'bg-gray-100',   text: 'text-gray-600',   border: 'border-gray-200',   icon: <Ban className="w-4 h-4" />,         label: 'Cancelled',                actions: [] },
+        EXTENSION_REQUESTED: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', icon: <RefreshCw className="w-4 h-4" />,    label: 'Extension Requested',      actions: [] },
+    }[status] || { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', icon: <Clock className="w-4 h-4" />, label: status, actions: [] });
 
-    const getPriorityConfig = (priority) => {
-        const configs = {
-            CRITICAL: { bg: 'bg-red-100', text: 'text-red-700', label: 'Critical' },
-            HIGH:     { bg: 'bg-orange-100', text: 'text-orange-700', label: 'High' },
-            MEDIUM:   { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Medium' },
-            LOW:      { bg: 'bg-green-100', text: 'text-green-700', label: 'Low' },
-        };
-        return configs[priority] || configs.MEDIUM;
-    };
+    const getPriorityConfig = (priority) => ({
+        CRITICAL: { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Critical' },
+        HIGH:     { bg: 'bg-orange-100', text: 'text-orange-700', label: 'High' },
+        MEDIUM:   { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Medium' },
+        LOW:      { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Low' },
+    }[priority] || { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Medium' });
 
     const filteredRequests = requests.filter(request => {
         if (filterStatus === 'ALL') return true;
-        const status = request.maintenanceStatus || request.status;
-        if (filterStatus === 'CANCELLED') return status === 'CANCELLED' || status === 'REJECTED';
-        return status === filterStatus;
+        const s = request.maintenanceStatus || request.status;
+        if (filterStatus === 'CANCELLED') return s === 'CANCELLED' || s === 'REJECTED';
+        return s === filterStatus;
     });
 
     const stats = {
         total:      requests.length,
-        pending:    requests.filter(r => (r.maintenanceStatus) === 'PENDING').length,
-        approved:   requests.filter(r => (r.maintenanceStatus) === 'APPROVED').length,
-        inProgress: requests.filter(r => (r.maintenanceStatus) === 'IN_PROGRESS').length,
-        completed:  requests.filter(r => (r.maintenanceStatus) === 'COMPLETED').length,
+        pending:    requests.filter(r => r.maintenanceStatus === 'PENDING').length,
+        approved:   requests.filter(r => r.maintenanceStatus === 'APPROVED').length,
+        inProgress: requests.filter(r => r.maintenanceStatus === 'IN_PROGRESS').length,
+        completed:  requests.filter(r => r.maintenanceStatus === 'COMPLETED').length,
         cancelled:  requests.filter(r => ['CANCELLED', 'REJECTED'].includes(r.maintenanceStatus)).length,
     };
+
+    const FILTERS = [
+        { key: 'ALL',         label: 'All',         active: 'bg-primary text-white',    inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200' },
+        { key: 'PENDING',     label: 'Pending',     active: 'bg-amber-500 text-white',  inactive: 'bg-amber-50 text-amber-600 hover:bg-amber-100' },
+        { key: 'APPROVED',    label: 'Approved',    active: 'bg-emerald-500 text-white',inactive: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' },
+        { key: 'IN_PROGRESS', label: 'In Progress', active: 'bg-blue-500 text-white',   inactive: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
+        { key: 'COMPLETED',   label: 'Completed',   active: 'bg-green-500 text-white',  inactive: 'bg-green-50 text-green-600 hover:bg-green-100' },
+        { key: 'CANCELLED',   label: 'Cancelled',   active: 'bg-gray-500 text-white',   inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200' },
+    ];
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
             <div className="max-w-7xl mx-auto p-6 space-y-6">
 
-                {/* ── Header ── */}
+                {/* ── Header + Stats + Filters ── */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-white to-primary/5">
                         <div className="flex items-center gap-3">
@@ -269,7 +302,6 @@ const MaintenanceRequests = () => {
                         </div>
                     </div>
 
-                    {/* ── Stats ── */}
                     {requests.length > 0 && (
                         <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 p-6 bg-gray-50/30">
                             <div className="bg-white rounded-xl p-3 text-center border border-gray-100"><p className="text-2xl font-bold text-text-primary">{stats.total}</p><p className="text-xs text-text-secondary">Total</p></div>
@@ -281,17 +313,9 @@ const MaintenanceRequests = () => {
                         </div>
                     )}
 
-                    {/* ── Filters ── */}
                     <div className="px-6 pt-4 pb-2 border-b border-gray-100">
                         <div className="flex flex-wrap gap-2">
-                            {[
-                                { key: 'ALL',         label: 'All',         active: 'bg-primary text-white',   inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200' },
-                                { key: 'PENDING',     label: 'Pending',     active: 'bg-amber-500 text-white',  inactive: 'bg-amber-50 text-amber-600 hover:bg-amber-100' },
-                                { key: 'APPROVED',    label: 'Approved',    active: 'bg-emerald-500 text-white',inactive: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' },
-                                { key: 'IN_PROGRESS', label: 'In Progress', active: 'bg-blue-500 text-white',   inactive: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
-                                { key: 'COMPLETED',   label: 'Completed',   active: 'bg-green-500 text-white',  inactive: 'bg-green-50 text-green-600 hover:bg-green-100' },
-                                { key: 'CANCELLED',   label: 'Cancelled',   active: 'bg-gray-500 text-white',   inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200' },
-                            ].map(f => (
+                            {FILTERS.map(f => (
                                 <button key={f.key} onClick={() => setFilterStatus(f.key)}
                                         className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${filterStatus === f.key ? f.active : f.inactive}`}>
                                     {f.label}
@@ -313,17 +337,18 @@ const MaintenanceRequests = () => {
                     ) : (
                         <div className="divide-y divide-gray-100">
                             {filteredRequests.map((request) => {
-                                const displayStatus = request.maintenanceStatus || request.status;
-                                const statusConfig  = getStatusConfig(displayStatus);
+                                const displayStatus  = request.maintenanceStatus || request.status;
+                                const statusConfig   = getStatusConfig(displayStatus);
                                 const priorityConfig = getPriorityConfig(request.priority);
-                                const timeStatus   = displayStatus === 'APPROVED' ? getTimeStatusBadge(request) : null;
-                                const startStatus  = displayStatus === 'APPROVED' ? getStartButtonStatus(request) : null;
+                                const isApproved     = displayStatus === 'APPROVED';
+                                const timeStatus     = isApproved ? getTimeStatusBadge(request) : null;
+                                const startStatus    = isApproved ? getStartButtonStatus(request) : null;
 
                                 return (
                                     <div key={request.id} className="p-6 hover:bg-gray-50/30 transition-colors">
                                         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 
-                                            {/* ── Left: details ── */}
+                                            {/* Left */}
                                             <div className="flex-1 min-w-0">
                                                 {/* Title row */}
                                                 <div className="flex items-center gap-3 flex-wrap mb-2">
@@ -332,22 +357,26 @@ const MaintenanceRequests = () => {
                                                     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${statusConfig.bg} ${statusConfig.text} border ${statusConfig.border}`}>
                                                         {statusConfig.icon}<span>{statusConfig.label}</span>
                                                     </span>
-                                                    {displayStatus === 'APPROVED' && timeStatus && (
+                                                    {isApproved && timeStatus && (
                                                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${timeStatus.className}`}>{timeStatus.text}</span>
                                                     )}
                                                 </div>
 
-                                                {/* Issue description */}
                                                 <p className="text-sm text-text-primary mb-3">{request.issueDescription || 'No description provided'}</p>
 
-                                                {/* Date / time */}
                                                 <div className="flex flex-wrap gap-4 text-sm text-text-secondary">
-                                                    <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>{format(new Date(request.bookingDate), 'EEEE, MMM d, yyyy')}</span></div>
-                                                    <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>{request.startTime} - {request.endTime}</span></div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Calendar className="w-4 h-4" />
+                                                        <span>{format(buildScheduledStart(request.bookingDate, request.startTime), 'EEEE, MMM d, yyyy')}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Clock className="w-4 h-4" />
+                                                        <span>{request.startTime} – {request.endTime}</span>
+                                                    </div>
                                                 </div>
 
-                                                {/* Time-window info banner for approved requests */}
-                                                {displayStatus === 'APPROVED' && startStatus && !startStatus.canStart && (
+                                                {/* Time window banner — not-yet-open or closed */}
+                                                {isApproved && startStatus && !startStatus.canStart && (
                                                     <div className={`mt-3 p-3 rounded-lg flex items-start gap-2 ${
                                                         startStatus.variant === 'info'    ? 'bg-blue-50 border border-blue-100' :
                                                             startStatus.variant === 'warning' ? 'bg-yellow-50 border border-yellow-100' :
@@ -366,7 +395,15 @@ const MaintenanceRequests = () => {
                                                     </div>
                                                 )}
 
-                                                {/* Admin reason for cancelled/rejected */}
+                                                {/* Window-open success banner */}
+                                                {isApproved && startStatus?.canStart && (
+                                                    <div className="mt-3 p-3 rounded-lg flex items-start gap-2 bg-green-50 border border-green-100">
+                                                        <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-green-500" />
+                                                        <p className="text-xs text-green-700">{startStatus.message}</p>
+                                                    </div>
+                                                )}
+
+                                                {/* Admin reason (cancelled/rejected) */}
                                                 {(displayStatus === 'CANCELLED' || displayStatus === 'REJECTED') && request.adminReason && (
                                                     <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
                                                         <p className="text-xs font-semibold text-text-secondary">Reason for cancellation:</p>
@@ -374,7 +411,7 @@ const MaintenanceRequests = () => {
                                                     </div>
                                                 )}
 
-                                                {/* Admin notes for other statuses */}
+                                                {/* Admin notes (other statuses) */}
                                                 {request.adminReason && displayStatus !== 'CANCELLED' && displayStatus !== 'REJECTED' && (
                                                     <div className="mt-3 p-3 bg-gray-50 rounded-lg">
                                                         <p className="text-xs font-semibold text-text-secondary">Admin notes:</p>
@@ -383,10 +420,10 @@ const MaintenanceRequests = () => {
                                                 )}
                                             </div>
 
-                                            {/* ── Right: action buttons ── */}
+                                            {/* Right: action buttons */}
                                             <div className="flex flex-row lg:flex-col gap-2 flex-shrink-0">
 
-                                                {/* Start button (APPROVED only) */}
+                                                {/* Start */}
                                                 {statusConfig.actions.includes('start') && (
                                                     <button
                                                         onClick={() => handleStartMaintenance(request)}
@@ -402,54 +439,42 @@ const MaintenanceRequests = () => {
                                                     </button>
                                                 )}
 
-                                                {/* Complete button (IN_PROGRESS / EXTENSION_REQUESTED) */}
+                                                {/* Complete */}
                                                 {statusConfig.actions.includes('complete') && (
-                                                    <button
-                                                        onClick={() => handleCompleteMaintenance(request)}
-                                                        disabled={processing}
-                                                        className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-xl text-sm font-semibold hover:bg-green-100 transition"
-                                                    >
+                                                    <button onClick={() => handleCompleteMaintenance(request)} disabled={processing}
+                                                            className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-xl text-sm font-semibold hover:bg-green-100 transition">
                                                         <Check className="w-4 h-4" /> Mark Completed
                                                     </button>
                                                 )}
 
-                                                {/* Extend button (IN_PROGRESS) */}
+                                                {/* Extend */}
                                                 {statusConfig.actions.includes('extend') && (
-                                                    <button
-                                                        onClick={() => { setSelectedRequest(request); setShowExtensionModal(true); }}
-                                                        className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-sm font-semibold hover:bg-amber-100 transition"
-                                                    >
+                                                    <button onClick={() => { setSelectedRequest(request); setShowExtensionModal(true); }}
+                                                            className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-sm font-semibold hover:bg-amber-100 transition">
                                                         <RefreshCw className="w-4 h-4" /> Request Extension
                                                     </button>
                                                 )}
 
-                                                {/* Cancel button (PENDING or APPROVED-before-start) */}
+                                                {/* Cancel */}
                                                 {statusConfig.actions.includes('cancel') && (
-                                                    <button
-                                                        onClick={() => openCancelConfirm(request)}
-                                                        disabled={processing}
-                                                        className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-sm font-semibold hover:bg-rose-100 border border-rose-200 transition"
-                                                    >
+                                                    <button onClick={() => openCancelConfirm(request)} disabled={processing}
+                                                            className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-sm font-semibold hover:bg-rose-100 border border-rose-200 transition">
                                                         <Trash2 className="w-4 h-4" />
                                                         {displayStatus === 'PENDING' ? 'Cancel Request' : 'Cancel Booking'}
                                                     </button>
                                                 )}
 
-                                                {/* Completed state badge */}
+                                                {/* Static badges */}
                                                 {displayStatus === 'COMPLETED' && (
                                                     <div className="px-4 py-2 bg-green-50 rounded-xl text-sm font-medium text-green-600 flex items-center gap-2">
                                                         <CheckCircle className="w-4 h-4" /> Completed
                                                     </div>
                                                 )}
-
-                                                {/* Cancelled state badge */}
                                                 {displayStatus === 'CANCELLED' && (
                                                     <div className="px-4 py-2 bg-gray-100 rounded-xl text-sm font-medium text-gray-600 flex items-center gap-2">
                                                         <Ban className="w-4 h-4" /> Cancelled
                                                     </div>
                                                 )}
-
-                                                {/* Extension requested badge */}
                                                 {displayStatus === 'EXTENSION_REQUESTED' && (
                                                     <div className="px-4 py-2 bg-purple-50 rounded-xl text-sm font-medium text-purple-600 flex items-center gap-2">
                                                         <RefreshCw className="w-4 h-4" /> Extension Pending
@@ -465,14 +490,10 @@ const MaintenanceRequests = () => {
                 </div>
             </div>
 
-            {/* ══════════════════════════════════════════
-                CANCEL CONFIRMATION MODAL
-            ══════════════════════════════════════════ */}
+            {/* ══ Cancel confirmation modal ══ */}
             {showCancelConfirm && requestToCancel && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-
-                        {/* Header */}
                         <div className={`p-6 border-b border-gray-100 ${
                             requestToCancel.maintenanceStatus === 'APPROVED'
                                 ? 'bg-gradient-to-r from-amber-50 to-white'
@@ -494,10 +515,7 @@ const MaintenanceRequests = () => {
                                 </div>
                             </div>
                         </div>
-
-                        {/* Body */}
                         <div className="p-6 space-y-4">
-                            {/* Contextual warning */}
                             {requestToCancel.maintenanceStatus === 'APPROVED' ? (
                                 <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-2">
                                     <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -507,39 +525,30 @@ const MaintenanceRequests = () => {
                                 </div>
                             ) : (
                                 <p className="text-sm text-text-secondary">
-                                    Are you sure you want to cancel this pending maintenance request? This action cannot be undone and the time slot will become available again.
+                                    Are you sure you want to cancel this pending maintenance request? The time slot will become available again.
                                 </p>
                             )}
-
-                            {/* Booking summary */}
                             <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-1">
                                 <p className="text-sm font-semibold text-text-primary">{requestToCancel.resourceName}</p>
                                 <p className="text-xs text-text-secondary">
-                                    {format(new Date(requestToCancel.bookingDate), 'EEEE, MMM d, yyyy')} &bull; {requestToCancel.startTime} – {requestToCancel.endTime}
+                                    {format(buildScheduledStart(requestToCancel.bookingDate, requestToCancel.startTime), 'EEEE, MMM d, yyyy')} &bull; {requestToCancel.startTime} – {requestToCancel.endTime}
                                 </p>
                                 {requestToCancel.issueDescription && (
                                     <p className="text-xs text-text-secondary italic">"{requestToCancel.issueDescription}"</p>
                                 )}
                             </div>
                         </div>
-
-                        {/* Footer */}
                         <div className="p-6 border-t border-gray-100 flex gap-3">
-                            <button
-                                onClick={() => { setShowCancelConfirm(false); setRequestToCancel(null); }}
-                                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
-                            >
+                            <button onClick={() => { setShowCancelConfirm(false); setRequestToCancel(null); }}
+                                    className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">
                                 Keep {requestToCancel.maintenanceStatus === 'PENDING' ? 'Request' : 'Booking'}
                             </button>
-                            <button
-                                onClick={handleCancelRequest}
-                                disabled={processing}
-                                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition disabled:opacity-50 ${
-                                    requestToCancel.maintenanceStatus === 'APPROVED'
-                                        ? 'bg-amber-600 hover:bg-amber-700'
-                                        : 'bg-rose-600 hover:bg-rose-700'
-                                }`}
-                            >
+                            <button onClick={handleCancelRequest} disabled={processing}
+                                    className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition disabled:opacity-50 ${
+                                        requestToCancel.maintenanceStatus === 'APPROVED'
+                                            ? 'bg-amber-600 hover:bg-amber-700'
+                                            : 'bg-rose-600 hover:bg-rose-700'
+                                    }`}>
                                 {processing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Yes, Cancel'}
                             </button>
                         </div>
@@ -547,9 +556,7 @@ const MaintenanceRequests = () => {
                 </div>
             )}
 
-            {/* ══════════════════════════════════════════
-                EXTENSION MODAL
-            ══════════════════════════════════════════ */}
+            {/* ══ Extension modal ══ */}
             {showExtensionModal && selectedRequest && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -567,41 +574,28 @@ const MaintenanceRequests = () => {
                         <div className="p-6 space-y-4">
                             <div className="p-3 bg-gray-50 rounded-lg">
                                 <p className="text-sm text-text-primary">
-                                    Current maintenance period: {format(new Date(selectedRequest.bookingDate), 'MMM d, yyyy')} &bull; {selectedRequest.startTime} – {selectedRequest.endTime}
+                                    Current maintenance period: {format(buildScheduledStart(selectedRequest.bookingDate, selectedRequest.startTime), 'MMM d, yyyy')} &bull; {selectedRequest.startTime} – {selectedRequest.endTime}
                                 </p>
                             </div>
                             <div>
                                 <label className="block text-sm font-semibold text-text-primary mb-2">
                                     Additional Days Needed <span className="text-red-500">*</span>
                                 </label>
-                                <input
-                                    type="number"
-                                    value={extensionDays}
-                                    onChange={(e) => setExtensionDays(e.target.value)}
-                                    min="1"
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                    placeholder="Enter number of days"
-                                    required
-                                />
+                                <input type="number" value={extensionDays} onChange={(e) => setExtensionDays(e.target.value)}
+                                       min="1" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                       placeholder="Enter number of days" required />
                             </div>
                             <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
-                                <p className="text-xs text-blue-700">
-                                    ℹ️ Your extension request will be sent to the admin for approval. The resource will remain in maintenance mode until a decision is made.
-                                </p>
+                                <p className="text-xs text-blue-700">ℹ️ Your extension request will be sent to the admin for approval. The resource will remain in maintenance mode until a decision is made.</p>
                             </div>
                         </div>
                         <div className="p-6 border-t border-gray-100 flex gap-3">
-                            <button
-                                onClick={() => { setShowExtensionModal(false); setSelectedRequest(null); setExtensionDays(''); }}
-                                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
-                            >
+                            <button onClick={() => { setShowExtensionModal(false); setSelectedRequest(null); setExtensionDays(''); }}
+                                    className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">
                                 Cancel
                             </button>
-                            <button
-                                onClick={handleRequestExtension}
-                                disabled={processing || !extensionDays}
-                                className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition disabled:opacity-50"
-                            >
+                            <button onClick={handleRequestExtension} disabled={processing || !extensionDays}
+                                    className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition disabled:opacity-50">
                                 {processing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit Request'}
                             </button>
                         </div>

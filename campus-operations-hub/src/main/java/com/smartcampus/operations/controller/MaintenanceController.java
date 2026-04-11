@@ -70,4 +70,11 @@ public class MaintenanceController {
         MaintenanceRequestDTO response = maintenanceService.updateMaintenanceStatus(maintenanceId, action, userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
+
+    @GetMapping("/admin/all")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<MaintenanceRequestDTO>> getAllMaintenanceRequests() {
+        List<MaintenanceRequestDTO> response = maintenanceService.getAllMaintenanceRequests();
+        return ResponseEntity.ok(response);
+    }
 }
