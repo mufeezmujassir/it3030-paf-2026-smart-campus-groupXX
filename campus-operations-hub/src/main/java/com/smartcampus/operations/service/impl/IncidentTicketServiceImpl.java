@@ -387,13 +387,21 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                 .createdByName(ticket.getCreatedBy().getFullName())
                 .assignedToId(ticket.getAssignedTo() != null ? ticket.getAssignedTo().getId() : null)
                 .assignedToName(ticket.getAssignedTo() != null ? ticket.getAssignedTo().getFullName() : null)
-                .attachments(ticket.getAttachments().stream().map(a -> AttachmentResponse.builder()
-                        .id(a.getId())
-                        .fileName(a.getFileName())
-                        .fileType(a.getFileType())
-                        .fileSize(a.getFileSize())
-                        .uploadedAt(a.getUploadedAt())
-                        .build()).collect(Collectors.toList()))
+                .attachments(ticket.getAttachments().stream().map(a -> {
+                    String base64Data = null;
+                    if (a.getData() != null) {
+                        base64Data = "data:" + a.getFileType() + ";base64," +
+                                java.util.Base64.getEncoder().encodeToString(a.getData());
+                    }
+                    return AttachmentResponse.builder()
+                            .id(a.getId())
+                            .fileName(a.getFileName())
+                            .fileType(a.getFileType())
+                            .fileSize(a.getFileSize())
+                            .base64Data(base64Data)
+                            .uploadedAt(a.getUploadedAt())
+                            .build();
+                }).collect(Collectors.toList()))
                 .comments(ticket.getComments().stream().map(c -> CommentResponse.builder()
                         .id(c.getId())
                         .content(c.getContent())
