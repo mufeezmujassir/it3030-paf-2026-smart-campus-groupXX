@@ -1,14 +1,9 @@
-// Updated ExpiredBookingService with ResourceRepository
+// Updated ExpiredBookingService.java
 package com.smartcampus.operations.service;
 
-import com.smartcampus.operations.entity.Booking;
-import com.smartcampus.operations.entity.BookingStatus;
-import com.smartcampus.operations.entity.Resource;
-import com.smartcampus.operations.entity.Role;
-import com.smartcampus.operations.entity.User;
-import com.smartcampus.operations.repository.BookingRepository;
-import com.smartcampus.operations.repository.ResourceRepository;
-import com.smartcampus.operations.repository.UserRepository;
+import com.smartcampus.operations.entity.*;
+import com.smartcampus.operations.repository.*;
+import com.smartcampus.operations.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -20,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -30,55 +26,53 @@ public class ExpiredBookingService {
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
     private final ResourceRepository resourceRepository;
+    private final MaintenanceRequestRepository maintenanceRequestRepository;
     private final NotificationService notificationService;
 
-    // Run once when application starts to process existing expired bookings
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void initializeExpiredBookings() {
         log.info("========== INITIALIZING EXPIRED BOOKINGS CHECK ==========");
-        processExpiredBookings(true); // true = initial run, will log more details
+        processExpiredBookings(true);
+        processExpiredMaintenanceBookings(true);
         log.info("========== INITIAL EXPIRED BOOKINGS CHECK COMPLETE ==========");
     }
 
-    // Run every hour at minute 0
-    @Scheduled(cron = "0 0 * * * *")
+    // More responsive — runs every 15 minutes
+    @Scheduled(cron = "0 */15 * * * *")
     @Transactional
     public void checkExpiredPendingBookings() {
-        log.info("Checking for expired pending bookings...");
+        log.info("Checking for expired bookings...");
         processExpiredBookings(false);
+        processExpiredMaintenanceBookings(false);
     }
 
+    // ── Existing: auto-reject PENDING bookings that have passed ──────────
     private void processExpiredBookings(boolean isInitialRun) {
         LocalDate today = LocalDate.now();
         LocalTime now = LocalTime.now();
 
-        // Find all pending bookings
         List<Booking> pendingBookings = bookingRepository.findByStatus(BookingStatus.PENDING);
 
         if (isInitialRun) {
-            log.info("Found {} pending bookings to check during initialization", pendingBookings.size());
+            log.info("Found {} pending bookings to check", pendingBookings.size());
         }
 
         int expiredCount = 0;
-        int expiringSoonCount = 0;
 
         for (Booking booking : pendingBookings) {
             LocalDate bookingDate = booking.getBookingDate();
             LocalTime bookingStartTime = booking.getStartTime();
 
-            // Check if booking has expired (past date or today with time passed)
             boolean isExpired = bookingDate.isBefore(today) ||
                     (bookingDate.equals(today) && bookingStartTime.isBefore(now));
 
             if (isExpired) {
-                // Auto-reject expired pending bookings
                 booking.setStatus(BookingStatus.REJECTED);
                 booking.setAdminReason("Auto-rejected: Booking request expired as it was not approved before the scheduled time");
                 bookingRepository.save(booking);
                 expiredCount++;
 
-                // Notify the user
                 User user = userRepository.findById(booking.getUserId()).orElse(null);
                 if (user != null) {
                     String resourceName = getResourceName(booking.getResourceId());
@@ -90,60 +84,120 @@ public class ExpiredBookingService {
                             "BOOKING_EXPIRED"
                     );
                 }
-
-                if (isInitialRun) {
-                    log.info("INIT: Auto-rejected expired booking - ID: {}, Resource: {}, Date: {}, Time: {}-{}",
-                            booking.getId(), booking.getResourceId(), bookingDate, bookingStartTime, booking.getEndTime());
-                } else {
-                    log.info("Auto-rejected expired booking: {} for resource {} on {}",
-                            booking.getId(), booking.getResourceId(), bookingDate);
-                }
-            }
-            // Check for bookings expiring in the next hour
-            else if (bookingDate.equals(today) &&
-                    bookingStartTime.isAfter(now) &&
-                    bookingStartTime.minusHours(1).isBefore(now)) {
-                expiringSoonCount++;
-
-                // Notify all admins about expiring pending booking
-                notifyAdminsAboutExpiringBooking(booking, isInitialRun);
             }
         }
 
-        if (expiredCount > 0 || expiringSoonCount > 0) {
-            if (isInitialRun) {
-                log.info("INITIALIZATION: Processed {} expired bookings and found {} bookings expiring soon",
-                        expiredCount, expiringSoonCount);
-            } else {
-                log.info("Processed {} expired bookings and notified about {} expiring soon bookings",
-                        expiredCount, expiringSoonCount);
-            }
-        } else if (isInitialRun) {
-            log.info("No expired pending bookings found during initialization");
+        if (expiredCount > 0) {
+            log.info("Auto-rejected {} expired pending bookings", expiredCount);
         }
     }
 
-    private void notifyAdminsAboutExpiringBooking(Booking booking, boolean isInitialRun) {
-        List<User> admins = userRepository.findByRole(Role.ADMIN);
-        String resourceName = getResourceName(booking.getResourceId());
+    // ── NEW: auto-cancel APPROVED maintenance bookings where technician
+    //         never started within the grace window (startTime + 30 min) ──
+    private void processExpiredMaintenanceBookings(boolean isInitialRun) {
+        LocalDate today = LocalDate.now();
+        LocalTime now = LocalTime.now();
 
-        for (User admin : admins) {
-            notificationService.sendNotification(
-                    admin.getId(),
-                    "⚠️ Urgent: Booking Pending Approval",
-                    String.format("Booking request for %s on %s at %s-%s is pending approval and expires in less than 1 hour!",
-                            resourceName, booking.getBookingDate(),
-                            booking.getStartTime(), booking.getEndTime()),
-                    "BOOKING_EXPIRING_SOON"
-            );
-        }
+        // Find all APPROVED maintenance bookings
+        List<Booking> approvedMaintenanceBookings = bookingRepository
+                .findByStatusAndBookingType(BookingStatus.APPROVED, "MAINTENANCE");
 
         if (isInitialRun) {
-            log.info("INIT: Found expiring soon booking - Resource: {}, Date: {}, Time: {}-{}",
-                    resourceName, booking.getBookingDate(),
-                    booking.getStartTime(), booking.getEndTime());
-        } else {
-            log.info("Notified {} admins about expiring booking: {}", admins.size(), booking.getId());
+            log.info("Found {} approved maintenance bookings to check", approvedMaintenanceBookings.size());
+        }
+
+        int expiredCount = 0;
+
+        for (Booking booking : approvedMaintenanceBookings) {
+            LocalDate bookingDate = booking.getBookingDate();
+            LocalTime startTime = booking.getStartTime();
+
+            // Grace window ends 30 minutes after scheduled start
+            LocalTime graceWindowEnd = startTime.plusMinutes(30);
+
+            // Check if the grace window has passed
+            boolean graceWindowPassed = bookingDate.isBefore(today) ||
+                    (bookingDate.equals(today) && graceWindowEnd.isBefore(now));
+
+            if (!graceWindowPassed) continue;
+
+            // Check if a maintenance request was actually started
+            Optional<MaintenanceRequest> mrOpt = maintenanceRequestRepository
+                    .findByBookingId(booking.getId());
+
+            boolean wasStarted = mrOpt.isPresent() &&
+                    (mrOpt.get().getMaintenanceStatus() == MaintenanceStatus.IN_PROGRESS ||
+                            mrOpt.get().getMaintenanceStatus() == MaintenanceStatus.COMPLETED ||
+                            mrOpt.get().getMaintenanceStatus() == MaintenanceStatus.EXTENSION_REQUESTED);
+
+            if (wasStarted) continue; // Technician did start — leave it alone
+
+            // Technician never started — auto-cancel the booking
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setAdminReason(
+                    "Auto-cancelled: Maintenance was not started within the scheduled time window. " +
+                            "The start window closed at " + graceWindowEnd + " on " + bookingDate + "."
+            );
+            bookingRepository.save(booking);
+            expiredCount++;
+
+            // If a maintenance record exists but was never started, mark it cancelled too
+            if (mrOpt.isPresent()) {
+                MaintenanceRequest mr = mrOpt.get();
+                mr.setMaintenanceStatus(MaintenanceStatus.REJECTED);
+                mr.setAdminNotes("Auto-cancelled: Technician did not start maintenance within the scheduled window.");
+                maintenanceRequestRepository.save(mr);
+            }
+
+            // Free the resource from maintenance mode if it was set
+            Resource resource = resourceRepository.findById(booking.getResourceId()).orElse(null);
+            if (resource != null && Boolean.TRUE.equals(resource.getMaintenanceMode()) &&
+                    booking.getBookingDate().equals(resource.getMaintenanceStartDate())) {
+                resource.setMaintenanceMode(false);
+                resource.setMaintenanceStartDate(null);
+                resource.setMaintenanceEndDate(null);
+                resource.setMaintenanceReason(null);
+                resourceRepository.save(resource);
+                log.info("Freed resource {} from maintenance mode (technician did not start)", resource.getName());
+            }
+
+            // Notify the technician
+            User technician = userRepository.findById(booking.getUserId()).orElse(null);
+            if (technician != null) {
+                String resourceName = getResourceName(booking.getResourceId());
+                notificationService.sendNotification(
+                        technician.getId(),
+                        "Maintenance Booking Expired",
+                        String.format(
+                                "Your approved maintenance booking for %s on %s at %s-%s has been automatically cancelled " +
+                                        "because maintenance was not started within the allowed window (by %s). " +
+                                        "Please submit a new maintenance request if the issue still needs attention.",
+                                resourceName, bookingDate, startTime, booking.getEndTime(), graceWindowEnd),
+                        "MAINTENANCE_EXPIRED"
+                );
+            }
+
+            // Notify admins
+            List<User> admins = userRepository.findByRole(Role.ADMIN);
+            for (User admin : admins) {
+                String resourceName = getResourceName(booking.getResourceId());
+                notificationService.sendNotification(
+                        admin.getId(),
+                        "⚠️ Maintenance Not Started — Auto-Cancelled",
+                        String.format(
+                                "The approved maintenance booking for %s on %s at %s-%s was automatically cancelled " +
+                                        "because the technician did not start maintenance within the allowed window.",
+                                resourceName, bookingDate, startTime, booking.getEndTime()),
+                        "MAINTENANCE_EXPIRED"
+                );
+            }
+
+            log.info("Auto-cancelled expired maintenance booking {} — technician did not start within window",
+                    booking.getId());
+        }
+
+        if (expiredCount > 0) {
+            log.info("Auto-cancelled {} expired approved maintenance bookings", expiredCount);
         }
     }
 

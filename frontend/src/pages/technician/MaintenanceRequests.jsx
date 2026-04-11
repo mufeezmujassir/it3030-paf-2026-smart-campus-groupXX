@@ -244,7 +244,14 @@ const MaintenanceRequests = () => {
     // ─── Config helpers ──────────────────────────────────────────────────
     const getStatusConfig = (status) => ({
         PENDING:             { bg: 'bg-amber-100',  text: 'text-amber-700',  border: 'border-amber-200',  icon: <Clock className="w-4 h-4" />,      label: 'Pending Approval',         actions: ['cancel'] },
-        APPROVED:            { bg: 'bg-emerald-100',text: 'text-emerald-700',border: 'border-emerald-200',icon: <CheckCircle className="w-4 h-4" />,  label: 'Approved — Ready to Start', actions: ['start', 'cancel'] },
+        APPROVED: {
+            bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200',
+            icon: <CheckCircle className="w-4 h-4" />,
+            label: 'Approved — Ready to Start',
+            // Cancel is only shown if the window hasn't closed yet
+            // We handle this dynamically in the render instead of here
+            actions: ['start', 'cancel'],
+        },
         IN_PROGRESS:         { bg: 'bg-blue-100',   text: 'text-blue-700',   border: 'border-blue-200',   icon: <Play className="w-4 h-4" />,        label: 'In Progress',              actions: ['complete', 'extend'] },
         COMPLETED:           { bg: 'bg-green-100',  text: 'text-green-700',  border: 'border-green-200',  icon: <CheckCircle className="w-4 h-4" />,  label: 'Completed',                actions: [] },
         REJECTED:            { bg: 'bg-rose-100',   text: 'text-rose-700',   border: 'border-rose-200',   icon: <XCircle className="w-4 h-4" />,     label: 'Rejected',                 actions: [] },
@@ -455,13 +462,25 @@ const MaintenanceRequests = () => {
                                                     </button>
                                                 )}
 
-                                                {/* Cancel */}
+                                                {/* Cancel — only show if window hasn't closed */}
                                                 {statusConfig.actions.includes('cancel') && (
-                                                    <button onClick={() => openCancelConfirm(request)} disabled={processing}
-                                                            className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-sm font-semibold hover:bg-rose-100 border border-rose-200 transition">
-                                                        <Trash2 className="w-4 h-4" />
-                                                        {displayStatus === 'PENDING' ? 'Cancel Request' : 'Cancel Booking'}
-                                                    </button>
+                                                    (() => {
+                                                        // For APPROVED maintenance, only allow cancel if window hasn't closed
+                                                        if (displayStatus === 'APPROVED') {
+                                                            const windowOpen = startStatus && (startStatus.canStart || startStatus.variant === 'info' || startStatus.variant === 'warning');
+                                                            if (!windowOpen) return null; // Window closed — scheduler will auto-cancel
+                                                        }
+                                                        return (
+                                                            <button
+                                                                onClick={() => openCancelConfirm(request)}
+                                                                disabled={processing}
+                                                                className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-sm font-semibold hover:bg-rose-100 border border-rose-200 transition"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                                {displayStatus === 'PENDING' ? 'Cancel Request' : 'Cancel Booking'}
+                                                            </button>
+                                                        );
+                                                    })()
                                                 )}
 
                                                 {/* Static badges */}

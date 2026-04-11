@@ -28,14 +28,13 @@ const AdminBookingManagement = () => {
     const [showFilters,      setShowFilters]      = useState(false);
 
     // ── Tab ───────────────────────────────────────────────────────────────
-    const [activeTab, setActiveTab] = useState('bookings'); // 'bookings' | 'maintenance'
+    const [activeTab, setActiveTab] = useState('bookings');
 
     // ── Maintenance-tab state ─────────────────────────────────────────────
-    // maintenanceRecords = raw MaintenanceRequestDTO list from /maintenance/admin/all
     const [maintenanceRecords,   setMaintenanceRecords]   = useState([]);
     const [maintenanceLoading,   setMaintenanceLoading]   = useState(false);
-    const [maintenanceFilter,    setMaintenanceFilter]    = useState('ALL'); // ALL | PENDING | EXTENSION_REQUESTED | IN_PROGRESS | COMPLETED | REJECTED
-    const [selectedMR,           setSelectedMR]           = useState(null);  // selected MaintenanceRequestDTO
+    const [maintenanceFilter,    setMaintenanceFilter]    = useState('ALL');
+    const [selectedMR,           setSelectedMR]           = useState(null);
     const [showMRModal,          setShowMRModal]          = useState(false);
     const [mrAction,             setMRAction]             = useState({ approve: true, notes: '' });
     const [mrProcessing,         setMRProcessing]         = useState(false);
@@ -55,14 +54,72 @@ const AdminBookingManagement = () => {
         } catch (err) { console.error(err); }
     };
 
-    // ── Fetch all maintenance records (admin endpoint) ─────────────────────
-    // This returns MaintenanceRequestDTO objects which include maintenanceStatus,
-    // resourceName, technicianName, bookingId, etc.
+    // ── Fetch all maintenance records (merged from both sources) ──────────
     const fetchMaintenanceRecords = async () => {
         setMaintenanceLoading(true);
         try {
-            const res = await api.get('/maintenance/admin/all');
-            setMaintenanceRecords(res.data || []);
+            // Source 1: All MAINTENANCE type bookings
+            const bookingsRes = await api.get('/bookings', { params: { size: 500 } });
+            const allBookings = bookingsRes.data.content || bookingsRes.data;
+            const maintenanceBookings = allBookings.filter(b => b.bookingType === 'MAINTENANCE');
+
+            // Source 2: All MaintenanceRequest records
+            let maintenanceRecordsRaw = [];
+            try {
+                const mrRes = await api.get('/maintenance/admin/all');
+                maintenanceRecordsRaw = mrRes.data || [];
+            } catch (err) {
+                console.error('Failed to fetch maintenance records:', err);
+            }
+
+            // Build lookup map: bookingId -> MaintenanceRequest
+            const mrByBookingId = {};
+            maintenanceRecordsRaw.forEach(mr => {
+                mrByBookingId[mr.bookingId] = mr;
+            });
+
+            // Merge both sources
+            const merged = maintenanceBookings.map(booking => {
+                const mr = mrByBookingId[booking.id];
+
+                let displayStatus;
+                if (mr) {
+                    displayStatus = mr.maintenanceStatus;
+                } else {
+                    if (booking.status === 'PENDING')        displayStatus = 'PENDING';
+                    else if (booking.status === 'APPROVED')  displayStatus = 'APPROVED';
+                    else if (booking.status === 'REJECTED')  displayStatus = 'REJECTED';
+                    else if (booking.status === 'CANCELLED') displayStatus = 'CANCELLED';
+                    else displayStatus = booking.status;
+                }
+
+                return {
+                    ...booking,
+                    maintenanceStatus:  displayStatus,
+                    maintenanceId:      mr?.id || null,
+                    technicianName:     booking.userFullName,
+                    extensionRequested: mr?.extensionRequested || null,
+                    extensionReason:    mr?.extensionReason || null,
+                    adminNotes:         mr?.adminNotes || booking.adminReason || null,
+                    startedAt:          mr?.startedAt || null,
+                    completedAt:        mr?.completedAt || null,
+                    bookingStatus:      booking.status,
+                };
+            });
+
+            // Sort: action-required first, then by date desc
+            const priorityOrder = {
+                PENDING: 0, EXTENSION_REQUESTED: 1, APPROVED: 2,
+                IN_PROGRESS: 3, COMPLETED: 4, REJECTED: 5, CANCELLED: 6
+            };
+            merged.sort((a, b) => {
+                const pa = priorityOrder[a.maintenanceStatus] ?? 99;
+                const pb = priorityOrder[b.maintenanceStatus] ?? 99;
+                if (pa !== pb) return pa - pb;
+                return new Date(b.createdAt) - new Date(a.createdAt);
+            });
+
+            setMaintenanceRecords(merged);
         } catch (err) {
             console.error('Failed to fetch maintenance records:', err);
             toast.error('Failed to load maintenance records');
@@ -71,32 +128,30 @@ const AdminBookingManagement = () => {
         }
     };
 
-    // ── Approve / Reject an extension request ─────────────────────────────
-    // Admin calls PATCH /maintenance/admin/{maintenanceId}
-    // To APPROVE extension  → set status = IN_PROGRESS (maintenance continues, extended dates already set)
-    // To REJECT  extension  → set status = IN_PROGRESS too (extension denied, but work continues until original end)
-    // The distinction is captured in the notes.
+    // ── Handle maintenance approve / reject ───────────────────────────────
     const handleMRAction = async () => {
         if (!selectedMR) return;
         setMRProcessing(true);
         try {
-            // For EXTENSION_REQUESTED → set back to IN_PROGRESS either way
-            // (admin approval means "yes, keep going"; rejection means "wrap up by original date")
-            // For PENDING maintenance booking → use booking approval endpoint instead
             if (selectedMR.maintenanceStatus === 'EXTENSION_REQUESTED') {
-                await api.patch(`/maintenance/admin/${selectedMR.id}`, {
+                // Extension approve/reject → maintenance endpoint → set back to IN_PROGRESS
+                await api.patch(`/maintenance/admin/${selectedMR.maintenanceId}`, {
                     status: 'IN_PROGRESS',
-                    notes: mrAction.notes || (mrAction.approve ? 'Extension approved' : 'Extension rejected — complete by original end date'),
+                    notes: mrAction.notes || (mrAction.approve
+                        ? 'Extension approved — continue maintenance'
+                        : 'Extension rejected — please complete by original end date'),
                 });
                 toast.success(`Extension ${mrAction.approve ? 'approved' : 'rejected'} — technician can now mark maintenance as completed.`);
-            } else {
-                // PENDING maintenance booking — approve/reject the booking itself
-                await bookingService.updateBookingStatus(selectedMR.bookingId, {
+
+            } else if (selectedMR.maintenanceStatus === 'PENDING') {
+                // Initial approval/rejection → booking status endpoint
+                await bookingService.updateBookingStatus(selectedMR.id, {
                     status: mrAction.approve ? 'APPROVED' : 'REJECTED',
                     reason: mrAction.notes,
                 });
                 toast.success(`Maintenance request ${mrAction.approve ? 'approved' : 'rejected'} successfully`);
             }
+
             setShowMRModal(false);
             setSelectedMR(null);
             setMRAction({ approve: true, notes: '' });
@@ -139,8 +194,8 @@ const AdminBookingManagement = () => {
         maintenance: data.filter(b => b.bookingType === 'MAINTENANCE').length,
     });
 
-    const isDateInPast    = (d) => isBefore(startOfDay(d), startOfDay(new Date()));
-    const isTimeSlotPast  = (startTime, date) => {
+    const isDateInPast   = (d) => isBefore(startOfDay(d), startOfDay(new Date()));
+    const isTimeSlotPast = (startTime, date) => {
         if (isDateInPast(date)) return true;
         const now = new Date();
         const slot = new Date(date);
@@ -156,12 +211,12 @@ const AdminBookingManagement = () => {
             const slotBookings = bookingsData.filter(b =>
                 formatTimeToHHMM(b.startTime) === startTime && formatTimeToHHMM(b.endTime) === endTime
             );
-            const isPastSlot = isDateInPast(selectedDate) || isTimeSlotPast(startTime, selectedDate);
-            const approvedCount   = slotBookings.filter(b => b.status === 'APPROVED').length;
-            const pendingCount    = slotBookings.filter(b => b.status === 'PENDING').length;
-            const rejectedCount   = slotBookings.filter(b => b.status === 'REJECTED').length;
-            const cancelledCount  = slotBookings.filter(b => b.status === 'CANCELLED').length;
-            const maintenanceCount= slotBookings.filter(b => b.bookingType === 'MAINTENANCE').length;
+            const isPastSlot     = isDateInPast(selectedDate) || isTimeSlotPast(startTime, selectedDate);
+            const approvedCount  = slotBookings.filter(b => b.status === 'APPROVED').length;
+            const pendingCount   = slotBookings.filter(b => b.status === 'PENDING').length;
+            const rejectedCount  = slotBookings.filter(b => b.status === 'REJECTED').length;
+            const cancelledCount = slotBookings.filter(b => b.status === 'CANCELLED').length;
+            const maintenanceCount = slotBookings.filter(b => b.bookingType === 'MAINTENANCE').length;
             slots.push({
                 startTime, endTime, bookings: slotBookings,
                 approvedCount, pendingCount, rejectedCount, cancelledCount, maintenanceCount,
@@ -180,13 +235,20 @@ const AdminBookingManagement = () => {
         if (!selectedBooking) return;
         setProcessing(true);
         try {
-            await bookingService.updateBookingStatus(selectedBooking.id, { status: adminAction.status, reason: adminAction.reason });
+            await bookingService.updateBookingStatus(selectedBooking.id, {
+                status: adminAction.status,
+                reason: adminAction.reason,
+            });
             toast.success(`Booking ${adminAction.status.toLowerCase()} successfully`);
-            setShowModal(false); setSelectedBooking(null); setAdminAction({ status: '', reason: '' });
+            setShowModal(false);
+            setSelectedBooking(null);
+            setAdminAction({ status: '', reason: '' });
             fetchCalendarData();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to update booking');
-        } finally { setProcessing(false); }
+        } finally {
+            setProcessing(false);
+        }
     };
 
     // ── Style helpers ─────────────────────────────────────────────────────
@@ -197,37 +259,43 @@ const AdminBookingManagement = () => {
         CANCELLED: 'bg-gray-100 text-gray-600 border-gray-200',
     }[s] || 'bg-amber-50 text-amber-700 border-amber-200');
 
-    const getStatusIcon = (s) => ({ APPROVED: <CheckCircle className="w-3 h-3" />, REJECTED: <XCircle className="w-3 h-3" />, CANCELLED: <XCircle className="w-3 h-3" /> }[s] || <Clock className="w-3 h-3" />);
+    const getStatusIcon = (s) => ({
+        APPROVED:  <CheckCircle className="w-3 h-3" />,
+        REJECTED:  <XCircle className="w-3 h-3" />,
+        CANCELLED: <XCircle className="w-3 h-3" />,
+    }[s] || <Clock className="w-3 h-3" />);
 
     const getSlotClasses = (status, isPastSlot) => {
-        if (isPastSlot)          return 'bg-gray-50 border-gray-200';
+        if (isPastSlot)            return 'bg-gray-50 border-gray-200';
         if (status === 'approved') return 'bg-gradient-to-r from-rose-50 to-white border-rose-200';
         if (status === 'pending')  return 'bg-gradient-to-r from-amber-50 to-white border-amber-200';
         return 'bg-white border-gray-100 hover:border-primary/20';
     };
 
-    const getResourceIcon = (type) => ({ LAB: '🧪', LECTURE_HALL: '📚', MEETING_SPACE: '💼', STUDY_ROOM: '📖', EQUIPMENT: '🔧' }[type] || '🏢');
-    const getUserRoleBadge = (role) => ({ TECHNICIAN: 'bg-purple-100 text-purple-700', STAFF: 'bg-blue-100 text-blue-700', ADMIN: 'bg-red-100 text-red-700' }[role] || 'bg-green-100 text-green-700');
-    const getPriorityBadge = (p) => ({ CRITICAL: 'bg-red-100 text-red-800', HIGH: 'bg-orange-100 text-orange-800', MEDIUM: 'bg-yellow-100 text-yellow-800', LOW: 'bg-green-100 text-green-800' }[p] || 'bg-yellow-100 text-yellow-800');
+    const getResourceIcon    = (type) => ({ LAB: '🧪', LECTURE_HALL: '📚', MEETING_SPACE: '💼', STUDY_ROOM: '📖', EQUIPMENT: '🔧' }[type] || '🏢');
+    const getUserRoleBadge   = (role) => ({ TECHNICIAN: 'bg-purple-100 text-purple-700', STAFF: 'bg-blue-100 text-blue-700', ADMIN: 'bg-red-100 text-red-700' }[role] || 'bg-green-100 text-green-700');
+    const getPriorityBadge   = (p)    => ({ CRITICAL: 'bg-red-100 text-red-800', HIGH: 'bg-orange-100 text-orange-800', MEDIUM: 'bg-yellow-100 text-yellow-800', LOW: 'bg-green-100 text-green-800' }[p] || 'bg-yellow-100 text-yellow-800');
 
-    // Maintenance record status badge
     const getMRStatusConfig = (status) => ({
-        PENDING:              { cls: 'bg-amber-100 text-amber-700',  label: 'Pending Approval' },
-        APPROVED:             { cls: 'bg-emerald-100 text-emerald-700', label: 'Approved' },
-        IN_PROGRESS:          { cls: 'bg-blue-100 text-blue-700',    label: 'In Progress' },
-        EXTENSION_REQUESTED:  { cls: 'bg-purple-100 text-purple-700',label: 'Extension Requested' },
-        COMPLETED:            { cls: 'bg-green-100 text-green-700',  label: 'Completed' },
-        REJECTED:             { cls: 'bg-rose-100 text-rose-700',    label: 'Rejected' },
-    }[status] || { cls: 'bg-gray-100 text-gray-600', label: status });
+        PENDING:              { cls: 'bg-amber-100 text-amber-700',   label: 'Pending Approval',      icon: <Clock className="w-3.5 h-3.5" /> },
+        APPROVED:             { cls: 'bg-emerald-100 text-emerald-700',label: 'Approved — Not Started', icon: <CheckCircle className="w-3.5 h-3.5" /> },
+        IN_PROGRESS:          { cls: 'bg-blue-100 text-blue-700',     label: 'In Progress',           icon: <Wrench className="w-3.5 h-3.5" /> },
+        EXTENSION_REQUESTED:  { cls: 'bg-purple-100 text-purple-700', label: 'Extension Requested',   icon: <RefreshCw className="w-3.5 h-3.5" /> },
+        COMPLETED:            { cls: 'bg-green-100 text-green-700',   label: 'Completed',             icon: <CheckCircle className="w-3.5 h-3.5" /> },
+        REJECTED:             { cls: 'bg-rose-100 text-rose-700',     label: 'Rejected',              icon: <XCircle className="w-3.5 h-3.5" /> },
+        CANCELLED:            { cls: 'bg-gray-100 text-gray-600',     label: 'Cancelled',             icon: <XCircle className="w-3.5 h-3.5" /> },
+    }[status] || { cls: 'bg-gray-100 text-gray-600', label: status, icon: null });
 
-    // ── Maintenance tab: filter + stats ───────────────────────────────────
+    // ── Maintenance stats + filters ───────────────────────────────────────
     const mrStats = {
-        total:     maintenanceRecords.length,
-        pending:   maintenanceRecords.filter(r => r.maintenanceStatus === 'PENDING').length,
-        inProgress:maintenanceRecords.filter(r => r.maintenanceStatus === 'IN_PROGRESS').length,
-        extension: maintenanceRecords.filter(r => r.maintenanceStatus === 'EXTENSION_REQUESTED').length,
-        completed: maintenanceRecords.filter(r => r.maintenanceStatus === 'COMPLETED').length,
-        rejected:  maintenanceRecords.filter(r => r.maintenanceStatus === 'REJECTED').length,
+        total:      maintenanceRecords.length,
+        pending:    maintenanceRecords.filter(r => r.maintenanceStatus === 'PENDING').length,
+        approved:   maintenanceRecords.filter(r => r.maintenanceStatus === 'APPROVED').length,
+        inProgress: maintenanceRecords.filter(r => r.maintenanceStatus === 'IN_PROGRESS').length,
+        extension:  maintenanceRecords.filter(r => r.maintenanceStatus === 'EXTENSION_REQUESTED').length,
+        completed:  maintenanceRecords.filter(r => r.maintenanceStatus === 'COMPLETED').length,
+        rejected:   maintenanceRecords.filter(r => r.maintenanceStatus === 'REJECTED').length,
+        cancelled:  maintenanceRecords.filter(r => r.maintenanceStatus === 'CANCELLED').length,
     };
 
     const filteredMR = maintenanceRecords.filter(r =>
@@ -235,13 +303,36 @@ const AdminBookingManagement = () => {
     );
 
     const MR_FILTERS = [
-        { key: 'ALL',                label: 'All',               active: 'bg-primary text-white',    inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200',    count: null },
-        { key: 'PENDING',            label: 'Pending',           active: 'bg-amber-500 text-white',  inactive: 'bg-amber-50 text-amber-600 hover:bg-amber-100',  count: mrStats.pending },
-        { key: 'IN_PROGRESS',        label: 'In Progress',       active: 'bg-blue-500 text-white',   inactive: 'bg-blue-50 text-blue-600 hover:bg-blue-100',     count: mrStats.inProgress },
-        { key: 'EXTENSION_REQUESTED',label: 'Extension Pending', active: 'bg-purple-500 text-white', inactive: 'bg-purple-50 text-purple-600 hover:bg-purple-100',count: mrStats.extension },
-        { key: 'COMPLETED',          label: 'Completed',         active: 'bg-green-500 text-white',  inactive: 'bg-green-50 text-green-600 hover:bg-green-100',  count: mrStats.completed },
-        { key: 'REJECTED',           label: 'Rejected',          active: 'bg-rose-500 text-white',   inactive: 'bg-rose-50 text-rose-600 hover:bg-rose-100',     count: mrStats.rejected },
+        { key: 'ALL',                label: 'All',               active: 'bg-primary text-white',     inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200',      count: null },
+        { key: 'PENDING',            label: 'Pending',           active: 'bg-amber-500 text-white',   inactive: 'bg-amber-50 text-amber-600 hover:bg-amber-100',    count: mrStats.pending },
+        { key: 'APPROVED',           label: 'Approved',          active: 'bg-emerald-500 text-white', inactive: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100', count: mrStats.approved },
+        { key: 'IN_PROGRESS',        label: 'In Progress',       active: 'bg-blue-500 text-white',    inactive: 'bg-blue-50 text-blue-600 hover:bg-blue-100',       count: mrStats.inProgress },
+        { key: 'EXTENSION_REQUESTED',label: 'Extension Pending', active: 'bg-purple-500 text-white',  inactive: 'bg-purple-50 text-purple-600 hover:bg-purple-100', count: mrStats.extension },
+        { key: 'COMPLETED',          label: 'Completed',         active: 'bg-green-500 text-white',   inactive: 'bg-green-50 text-green-600 hover:bg-green-100',    count: mrStats.completed },
+        { key: 'REJECTED',           label: 'Rejected',          active: 'bg-rose-500 text-white',    inactive: 'bg-rose-50 text-rose-600 hover:bg-rose-100',       count: mrStats.rejected },
+        { key: 'CANCELLED',          label: 'Cancelled',         active: 'bg-gray-500 text-white',    inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200',      count: mrStats.cancelled },
     ];
+
+    // ── Helper to format bookingDate (string or Java array) ───────────────
+    const formatBookingDate = (bookingDate) => {
+        if (!bookingDate) return '—';
+        try {
+            const dateStr = Array.isArray(bookingDate)
+                ? `${bookingDate[0]}-${String(bookingDate[1]).padStart(2, '0')}-${String(bookingDate[2]).padStart(2, '0')}`
+                : bookingDate;
+            return format(new Date(dateStr + 'T00:00:00'), 'EEEE, MMM d, yyyy');
+        } catch { return String(bookingDate); }
+    };
+
+    const formatBookingDateLong = (bookingDate) => {
+        if (!bookingDate) return '—';
+        try {
+            const dateStr = Array.isArray(bookingDate)
+                ? `${bookingDate[0]}-${String(bookingDate[1]).padStart(2, '0')}-${String(bookingDate[2]).padStart(2, '0')}`
+                : bookingDate;
+            return format(new Date(dateStr + 'T00:00:00'), 'MMMM d, yyyy');
+        } catch { return String(bookingDate); }
+    };
 
     const StatCard = ({ icon, title, value, color }) => (
         <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-all">
@@ -286,7 +377,6 @@ const AdminBookingManagement = () => {
                             className={`relative flex items-center gap-2 px-6 py-3 text-sm font-semibold border-b-2 transition-all ${activeTab === 'maintenance' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
                         >
                             <Wrench className="w-4 h-4" /> Maintenance Requests
-                            {/* Dot if there are pending/extension items */}
                             {(mrStats.pending > 0 || mrStats.extension > 0) && (
                                 <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-full bg-amber-500 text-white">
                                     {mrStats.pending + mrStats.extension}
@@ -346,7 +436,7 @@ const AdminBookingManagement = () => {
                             </div>
                         </div>
 
-                        {/* Stats */}
+                        {/* Booking stats */}
                         {selectedResource && stats.totalRequests > 0 && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
                                 <StatCard icon={<TrendingUp className="w-5 h-5 text-primary" />}      title="Total"       value={stats.totalRequests} color="primary" />
@@ -382,6 +472,11 @@ const AdminBookingManagement = () => {
                                             <button onClick={handleNextDay} className="p-2 hover:bg-gray-50 rounded-lg transition"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
                                         </div>
                                     </div>
+                                    <div className="flex flex-wrap items-center gap-4 mt-4 pt-2">
+                                        {[['bg-white border-gray-300','Available'],['bg-amber-100 border-amber-200','Pending'],['bg-rose-100 border-rose-200','Approved'],['bg-purple-100 border-purple-200','Maintenance'],['bg-gray-200 border-gray-300','Past']].map(([cls, label]) => (
+                                            <div key={label} className="flex items-center gap-2"><div className={`w-3 h-3 ${cls} rounded border`}></div><span className="text-xs text-text-secondary">{label}</span></div>
+                                        ))}
+                                    </div>
                                 </div>
                                 <div className="p-6">
                                     {calendarLoading ? (
@@ -396,11 +491,11 @@ const AdminBookingManagement = () => {
                                                             <span className="text-base font-semibold text-text-primary">{slot.startTime} - {slot.endTime}</span>
                                                             {slot.totalCount > 0 && <span className="text-xs text-text-secondary">({slot.totalCount})</span>}
                                                         </div>
-                                                        <div className="flex gap-2">
-                                                            {slot.approvedCount  > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg text-xs font-medium text-emerald-600"><CheckCircle className="w-3 h-3" />{slot.approvedCount}</span>}
-                                                            {slot.pendingCount   > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-lg text-xs font-medium text-amber-600"><Clock className="w-3 h-3" />{slot.pendingCount}</span>}
-                                                            {slot.rejectedCount  > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 rounded-lg text-xs font-medium text-rose-600"><XCircle className="w-3 h-3" />{slot.rejectedCount}</span>}
-                                                            {slot.maintenanceCount>0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 rounded-lg text-xs font-medium text-purple-600"><Wrench className="w-3 h-3" />{slot.maintenanceCount}</span>}
+                                                        <div className="flex gap-2 flex-wrap">
+                                                            {slot.approvedCount   > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg text-xs font-medium text-emerald-600"><CheckCircle className="w-3 h-3" />{slot.approvedCount}</span>}
+                                                            {slot.pendingCount    > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-lg text-xs font-medium text-amber-600"><Clock className="w-3 h-3" />{slot.pendingCount}</span>}
+                                                            {slot.rejectedCount   > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 rounded-lg text-xs font-medium text-rose-600"><XCircle className="w-3 h-3" />{slot.rejectedCount}</span>}
+                                                            {slot.maintenanceCount> 0 && <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 rounded-lg text-xs font-medium text-purple-600"><Wrench className="w-3 h-3" />{slot.maintenanceCount}</span>}
                                                         </div>
                                                     </div>
                                                     <div className="p-4 space-y-3">
@@ -470,17 +565,17 @@ const AdminBookingManagement = () => {
                 ════════════════════════════════════════════ */}
                 {activeTab === 'maintenance' && (
                     <>
-                        {/* Stats row */}
-                        {maintenanceRecords.length > 0 && (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                                <StatCard icon={<TrendingUp className="w-5 h-5 text-primary" />}       title="Total"        value={mrStats.total}      color="primary" />
-                                <StatCard icon={<Clock className="w-5 h-5 text-amber-500" />}           title="Pending"      value={mrStats.pending}    color="amber" />
-                                <StatCard icon={<Wrench className="w-5 h-5 text-blue-500" />}           title="In Progress"  value={mrStats.inProgress} color="blue" />
-                                <StatCard icon={<RefreshCw className="w-5 h-5 text-purple-500" />}      title="Ext. Pending" value={mrStats.extension}  color="purple" />
-                                <StatCard icon={<CheckCircle className="w-5 h-5 text-green-500" />}     title="Completed"    value={mrStats.completed}  color="green" />
-                                <StatCard icon={<XCircle className="w-5 h-5 text-rose-500" />}          title="Rejected"     value={mrStats.rejected}   color="rose" />
-                            </div>
-                        )}
+                        {/* Stats row — 8 cards */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                            <StatCard icon={<TrendingUp className="w-5 h-5 text-primary" />}       title="Total"        value={mrStats.total}      color="primary" />
+                            <StatCard icon={<Clock className="w-5 h-5 text-amber-500" />}           title="Pending"      value={mrStats.pending}    color="amber" />
+                            <StatCard icon={<CheckCircle className="w-5 h-5 text-emerald-500" />}   title="Approved"     value={mrStats.approved}   color="emerald" />
+                            <StatCard icon={<Wrench className="w-5 h-5 text-blue-500" />}           title="In Progress"  value={mrStats.inProgress} color="blue" />
+                            <StatCard icon={<RefreshCw className="w-5 h-5 text-purple-500" />}      title="Ext. Pending" value={mrStats.extension}  color="purple" />
+                            <StatCard icon={<CheckCircle className="w-5 h-5 text-green-500" />}     title="Completed"    value={mrStats.completed}  color="green" />
+                            <StatCard icon={<XCircle className="w-5 h-5 text-rose-500" />}          title="Rejected"     value={mrStats.rejected}   color="rose" />
+                            <StatCard icon={<XCircle className="w-5 h-5 text-gray-500" />}          title="Cancelled"    value={mrStats.cancelled}  color="gray" />
+                        </div>
 
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                             {/* Header */}
@@ -492,12 +587,13 @@ const AdminBookingManagement = () => {
                                         </div>
                                         <div>
                                             <h2 className="text-xl font-bold text-text-primary">Maintenance Requests</h2>
-                                            <p className="text-sm text-text-secondary mt-0.5">
-                                                Approve pending requests and extension requests from technicians
-                                            </p>
+                                            <p className="text-sm text-text-secondary mt-0.5">All maintenance bookings from submission through completion</p>
                                         </div>
                                     </div>
-                                    <button onClick={fetchMaintenanceRecords} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-200 transition">
+                                    <button
+                                        onClick={fetchMaintenanceRecords}
+                                        className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-200 transition"
+                                    >
                                         <RefreshCw className="w-4 h-4" /> Refresh
                                     </button>
                                 </div>
@@ -505,8 +601,11 @@ const AdminBookingManagement = () => {
                                 {/* Filter tabs */}
                                 <div className="flex flex-wrap gap-2 mt-4">
                                     {MR_FILTERS.map(f => (
-                                        <button key={f.key} onClick={() => setMaintenanceFilter(f.key)}
-                                                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${maintenanceFilter === f.key ? f.active : f.inactive}`}>
+                                        <button
+                                            key={f.key}
+                                            onClick={() => setMaintenanceFilter(f.key)}
+                                            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${maintenanceFilter === f.key ? f.active : f.inactive}`}
+                                        >
                                             {f.label}
                                             {f.count != null && f.count > 0 && maintenanceFilter !== f.key && (
                                                 <span className="inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-full bg-white/70 text-current">{f.count}</span>
@@ -522,26 +621,30 @@ const AdminBookingManagement = () => {
                             ) : filteredMR.length === 0 ? (
                                 <div className="p-16 text-center">
                                     <div className="w-20 h-20 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Wrench className="w-10 h-10 text-purple-300" /></div>
-                                    <h3 className="text-lg font-semibold text-text-primary mb-1">No Maintenance Requests</h3>
-                                    <p className="text-sm text-text-secondary">No records match the current filter.</p>
+                                    <h3 className="text-lg font-semibold text-text-primary mb-1">No Records Found</h3>
+                                    <p className="text-sm text-text-secondary">No maintenance records match the current filter.</p>
                                     {maintenanceFilter !== 'ALL' && <button onClick={() => setMaintenanceFilter('ALL')} className="mt-3 text-sm text-primary hover:underline">View all</button>}
                                 </div>
                             ) : (
                                 <div className="divide-y divide-gray-100">
                                     {filteredMR.map((mr) => {
-                                        const statusCfg = getMRStatusConfig(mr.maintenanceStatus);
+                                        const statusCfg   = getMRStatusConfig(mr.maintenanceStatus);
                                         const needsAction = mr.maintenanceStatus === 'PENDING' || mr.maintenanceStatus === 'EXTENSION_REQUESTED';
                                         const isExtension = mr.maintenanceStatus === 'EXTENSION_REQUESTED';
+                                        const isPending   = mr.maintenanceStatus === 'PENDING';
 
                                         return (
                                             <div key={mr.id} className={`p-6 hover:bg-gray-50/30 transition-colors ${needsAction ? 'border-l-4 border-l-amber-400' : ''}`}>
                                                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+
+                                                    {/* Left: details */}
                                                     <div className="flex-1 min-w-0">
-                                                        {/* Title row */}
                                                         <div className="flex items-center gap-3 flex-wrap mb-2">
                                                             <h3 className="text-lg font-bold text-text-primary">{mr.resourceName}</h3>
                                                             {mr.priority && <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getPriorityBadge(mr.priority)}`}>{mr.priority}</span>}
-                                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusCfg.cls}`}>{statusCfg.label}</span>
+                                                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-semibold ${statusCfg.cls}`}>
+                                                                {statusCfg.icon}<span>{statusCfg.label}</span>
+                                                            </span>
                                                             {needsAction && (
                                                                 <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 animate-pulse">
                                                                     ⚡ Action Required
@@ -552,11 +655,11 @@ const AdminBookingManagement = () => {
                                                         {/* Technician */}
                                                         <div className="flex items-center gap-2 mb-3">
                                                             <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0"><User className="w-3 h-3 text-purple-600" /></div>
-                                                            <span className="text-sm text-text-primary font-medium">{mr.technicianName}</span>
+                                                            <span className="text-sm text-text-primary font-medium">{mr.technicianName || mr.userFullName}</span>
                                                             <span className="text-xs text-text-secondary">· Technician</span>
                                                         </div>
 
-                                                        {/* Issue */}
+                                                        {/* Issue description */}
                                                         {mr.issueDescription && (
                                                             <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 mb-3">
                                                                 <p className="text-xs font-bold text-purple-700 uppercase tracking-wider mb-1">Issue</p>
@@ -576,34 +679,63 @@ const AdminBookingManagement = () => {
                                                                     {mr.extensionReason && <span> Reason: {mr.extensionReason}</span>}
                                                                 </p>
                                                                 <p className="text-xs text-purple-600 mt-1">
-                                                                    Approving will set the status back to <strong>In Progress</strong> so the technician can mark it as completed.
-                                                                    Rejecting also resumes in-progress status but signals the technician to wrap up.
+                                                                    Approving or rejecting will both resume <strong>In Progress</strong> status so the technician can mark it as completed.
+                                                                    Rejecting signals the technician to wrap up within the original timeframe.
                                                                 </p>
                                                             </div>
                                                         )}
 
-                                                        {/* Dates */}
+                                                        {/* Approved but not started info */}
+                                                        {mr.maintenanceStatus === 'APPROVED' && (
+                                                            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 mb-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                                                                    <p className="text-xs text-emerald-700">
+                                                                        Approved — waiting for technician to start maintenance within the scheduled time window.
+                                                                        If not started within 30 minutes of the scheduled time, this will be auto-cancelled.
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Date + time */}
                                                         <div className="flex flex-wrap gap-4 text-sm text-text-secondary">
-                                                            <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>{mr.bookingDate ? format(new Date(Array.isArray(mr.bookingDate) ? `${mr.bookingDate[0]}-${String(mr.bookingDate[1]).padStart(2,'0')}-${String(mr.bookingDate[2]).padStart(2,'0')}` : mr.bookingDate), 'EEEE, MMM d, yyyy') : '—'}</span></div>
+                                                            <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>{formatBookingDate(mr.bookingDate)}</span></div>
                                                             <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>{mr.startTime} – {mr.endTime}</span></div>
                                                         </div>
 
+                                                        {/* Started / completed timestamps */}
+                                                        {mr.startedAt && (
+                                                            <p className="text-xs text-text-secondary mt-2">
+                                                                Started: {format(new Date(mr.startedAt), 'MMM d, h:mm a')}
+                                                            </p>
+                                                        )}
+                                                        {mr.completedAt && (
+                                                            <p className="text-xs text-text-secondary mt-1">
+                                                                Completed: {format(new Date(mr.completedAt), 'MMM d, h:mm a')}
+                                                            </p>
+                                                        )}
+
                                                         {/* Admin notes */}
                                                         {mr.adminNotes && (
-                                                            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                                            <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
                                                                 <p className="text-xs font-semibold text-text-secondary">Admin notes:</p>
                                                                 <p className="text-sm text-text-primary mt-1">{mr.adminNotes}</p>
                                                             </div>
                                                         )}
 
-                                                        {/* Timing */}
-                                                        {mr.startedAt && <p className="text-xs text-text-secondary mt-2">Started: {format(new Date(mr.startedAt), 'MMM d, h:mm a')}</p>}
-                                                        {mr.completedAt && <p className="text-xs text-text-secondary mt-1">Completed: {format(new Date(mr.completedAt), 'MMM d, h:mm a')}</p>}
+                                                        {/* Rejection/cancellation reason from booking */}
+                                                        {(mr.maintenanceStatus === 'REJECTED' || mr.maintenanceStatus === 'CANCELLED') && mr.adminReason && !mr.adminNotes && (
+                                                            <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                                                <p className="text-xs font-semibold text-text-secondary">Reason:</p>
+                                                                <p className="text-sm text-text-primary mt-1">{mr.adminReason}</p>
+                                                            </div>
+                                                        )}
                                                     </div>
 
-                                                    {/* Action buttons */}
+                                                    {/* Right: action buttons */}
                                                     <div className="flex flex-row lg:flex-col gap-2 flex-shrink-0">
-                                                        {needsAction && (
+                                                        {needsAction ? (
                                                             <>
                                                                 <button
                                                                     onClick={() => { setSelectedMR(mr); setMRAction({ approve: true, notes: '' }); setShowMRModal(true); }}
@@ -620,11 +752,9 @@ const AdminBookingManagement = () => {
                                                                     {isExtension ? 'Reject Extension' : 'Reject'}
                                                                 </button>
                                                             </>
-                                                        )}
-                                                        {!needsAction && (
+                                                        ) : (
                                                             <div className={`px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 ${statusCfg.cls}`}>
-                                                                {mr.maintenanceStatus === 'COMPLETED' && <CheckCircle className="w-4 h-4" />}
-                                                                {mr.maintenanceStatus === 'IN_PROGRESS' && <Wrench className="w-4 h-4" />}
+                                                                {statusCfg.icon}
                                                                 {statusCfg.label}
                                                             </div>
                                                         )}
@@ -668,15 +798,27 @@ const AdminBookingManagement = () => {
                                 {selectedBooking.purpose && <div className="p-4 bg-amber-50 rounded-xl border border-amber-100"><p className="text-xs font-bold text-amber-700 uppercase mb-1">Purpose</p><p className="text-sm text-amber-800">{selectedBooking.purpose}</p></div>}
                                 {adminAction.status && (
                                     <div>
-                                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Reason {adminAction.status === 'REJECTED' ? '(Required)' : '(Optional)'}</label>
-                                        <textarea value={adminAction.reason} onChange={(e) => setAdminAction({ ...adminAction, reason: e.target.value })} rows="3" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder={adminAction.status === 'REJECTED' ? 'Provide a reason...' : 'Optional notes'} />
+                                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">
+                                            Reason {adminAction.status === 'REJECTED' ? '(Required)' : '(Optional)'}
+                                        </label>
+                                        <textarea
+                                            value={adminAction.reason}
+                                            onChange={(e) => setAdminAction({ ...adminAction, reason: e.target.value })}
+                                            rows="3"
+                                            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                            placeholder={adminAction.status === 'REJECTED' ? 'Provide a reason...' : 'Optional notes'}
+                                        />
                                     </div>
                                 )}
                             </div>
                             <div className="p-6 border-t border-gray-100 flex gap-3">
                                 <button onClick={() => { setShowModal(false); setSelectedBooking(null); setAdminAction({ status: '', reason: '' }); }} className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
                                 {adminAction.status && (
-                                    <button onClick={handleStatusUpdate} disabled={processing || (adminAction.status === 'REJECTED' && !adminAction.reason)} className={`flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition ${adminAction.status === 'APPROVED' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'} disabled:opacity-50`}>
+                                    <button
+                                        onClick={handleStatusUpdate}
+                                        disabled={processing || (adminAction.status === 'REJECTED' && !adminAction.reason)}
+                                        className={`flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition disabled:opacity-50 ${adminAction.status === 'APPROVED' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+                                    >
                                         {processing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : `Confirm ${adminAction.status}`}
                                     </button>
                                 )}
@@ -696,33 +838,24 @@ const AdminBookingManagement = () => {
                                     </div>
                                     <div>
                                         <h3 className="text-xl font-bold text-text-primary">
-                                            {mrAction.approve ? 'Approve' : 'Reject'} {selectedMR.maintenanceStatus === 'EXTENSION_REQUESTED' ? 'Extension Request' : 'Maintenance Request'}
+                                            {mrAction.approve ? 'Approve' : 'Reject'}{' '}
+                                            {selectedMR.maintenanceStatus === 'EXTENSION_REQUESTED' ? 'Extension Request' : 'Maintenance Request'}
                                         </h3>
-                                        <p className="text-sm text-text-secondary">{selectedMR.resourceName} · {selectedMR.technicianName}</p>
+                                        <p className="text-sm text-text-secondary">{selectedMR.resourceName} · {selectedMR.technicianName || selectedMR.userFullName}</p>
                                     </div>
                                 </div>
                             </div>
                             <div className="p-6 space-y-4">
-                                {/* Details */}
+                                {/* Date / time */}
                                 <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl">
                                     <div>
                                         <p className="text-xs font-bold text-text-secondary uppercase">Date</p>
-                                        <p className="text-base font-semibold text-text-primary mt-1">
-                                            {mr => {
-                                                const d = selectedMR.bookingDate;
-                                                if (!d) return '—';
-                                                const dateStr = Array.isArray(d) ? `${d[0]}-${String(d[1]).padStart(2,'0')}-${String(d[2]).padStart(2,'0')}` : d;
-                                                return format(new Date(dateStr), 'MMMM d, yyyy');
-                                            }}
-                                            {(() => {
-                                                const d = selectedMR.bookingDate;
-                                                if (!d) return '—';
-                                                const dateStr = Array.isArray(d) ? `${d[0]}-${String(d[1]).padStart(2,'0')}-${String(d[2]).padStart(2,'0')}` : d;
-                                                return format(new Date(dateStr), 'MMMM d, yyyy');
-                                            })()}
-                                        </p>
+                                        <p className="text-base font-semibold text-text-primary mt-1">{formatBookingDateLong(selectedMR.bookingDate)}</p>
                                     </div>
-                                    <div><p className="text-xs font-bold text-text-secondary uppercase">Time</p><p className="text-base font-semibold text-text-primary mt-1">{selectedMR.startTime} – {selectedMR.endTime}</p></div>
+                                    <div>
+                                        <p className="text-xs font-bold text-text-secondary uppercase">Time</p>
+                                        <p className="text-base font-semibold text-text-primary mt-1">{selectedMR.startTime} – {selectedMR.endTime}</p>
+                                    </div>
                                 </div>
 
                                 {/* Issue */}
@@ -736,25 +869,29 @@ const AdminBookingManagement = () => {
                                 {/* Extension details */}
                                 {selectedMR.maintenanceStatus === 'EXTENSION_REQUESTED' && (
                                     <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
-                                        <div className="flex items-center gap-2 mb-1"><RefreshCw className="w-4 h-4 text-purple-600" /><p className="text-xs font-bold text-purple-700 uppercase">Extension Details</p></div>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <RefreshCw className="w-4 h-4 text-purple-600" />
+                                            <p className="text-xs font-bold text-purple-700 uppercase">Extension Details</p>
+                                        </div>
                                         <p className="text-sm text-purple-800">
                                             Requesting <strong>{selectedMR.extensionRequested} additional day{selectedMR.extensionRequested !== 1 ? 's' : ''}</strong>.
+                                            {selectedMR.extensionReason && <span> {selectedMR.extensionReason}</span>}
                                         </p>
-                                        {mrAction.approve ? (
-                                            <p className="text-xs text-emerald-700 mt-2 font-medium">✓ Approving will resume IN_PROGRESS status so the technician can mark it as completed.</p>
-                                        ) : (
-                                            <p className="text-xs text-rose-700 mt-2 font-medium">✗ Rejecting will also resume IN_PROGRESS — the technician should complete within the original timeframe.</p>
-                                        )}
+                                        <p className={`text-xs mt-2 font-medium ${mrAction.approve ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                            {mrAction.approve
+                                                ? '✓ Approving sets status back to In Progress — technician can then mark it as completed.'
+                                                : '✗ Rejecting also sets status back to In Progress — technician should complete within the original timeframe.'}
+                                        </p>
                                     </div>
                                 )}
 
-                                {/* Context banner */}
-                                {!selectedMR.maintenanceStatus?.includes('EXTENSION') && (
+                                {/* Context banner for initial approval */}
+                                {selectedMR.maintenanceStatus === 'PENDING' && (
                                     <div className={`p-3 rounded-xl border flex items-start gap-2 ${mrAction.approve ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
                                         <AlertCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${mrAction.approve ? 'text-emerald-600' : 'text-rose-600'}`} />
                                         <p className={`text-xs ${mrAction.approve ? 'text-emerald-700' : 'text-rose-700'}`}>
                                             {mrAction.approve
-                                                ? 'Approving will mark this resource for maintenance. The technician will be notified and can start maintenance at the scheduled time.'
+                                                ? 'Approving will mark this resource for maintenance on the scheduled date. The technician will be notified and can start within the scheduled window.'
                                                 : 'Rejecting will notify the technician. The resource will remain available for regular bookings.'}
                                         </p>
                                     </div>
@@ -786,12 +923,15 @@ const AdminBookingManagement = () => {
                                     disabled={mrProcessing || (!mrAction.approve && !mrAction.notes)}
                                     className={`flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition disabled:opacity-50 ${mrAction.approve ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200' : 'bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200'}`}
                                 >
-                                    {mrProcessing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : `Confirm ${mrAction.approve ? 'Approval' : 'Rejection'}`}
+                                    {mrProcessing
+                                        ? <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                                        : `Confirm ${mrAction.approve ? 'Approval' : 'Rejection'}`}
                                 </button>
                             </div>
                         </div>
                     </div>
                 )}
+
             </div>
         </div>
     );

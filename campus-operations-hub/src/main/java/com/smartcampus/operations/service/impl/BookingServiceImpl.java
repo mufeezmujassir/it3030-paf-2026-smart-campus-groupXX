@@ -291,7 +291,21 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findByIdAndUserId(bookingId, user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found or not owned by user"));
 
-        // Users can cancel PENDING or APPROVED bookings
+        // ── Guard: cannot cancel a booking whose time slot has already passed ──
+        LocalDate today = LocalDate.now();
+        LocalTime now   = LocalTime.now();
+
+        boolean slotHasPassed =
+                booking.getBookingDate().isBefore(today) ||
+                        (booking.getBookingDate().isEqual(today) && booking.getEndTime().isBefore(now));
+
+        if (slotHasPassed) {
+            throw new InvalidBookingException(
+                    String.format("Cannot cancel a booking whose time slot has already passed (%s %s–%s).",
+                            booking.getBookingDate(), booking.getStartTime(), booking.getEndTime()));
+        }
+
+        // ── Cancel PENDING bookings ──
         if (booking.getStatus() == BookingStatus.PENDING) {
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setAdminReason("Cancelled by user");
@@ -305,7 +319,7 @@ public class BookingServiceImpl implements BookingService {
             notificationService.sendNotification(
                     user.getId(),
                     "Booking Cancelled",
-                    String.format("Your pending booking request for %s on %s at %s-%s has been cancelled.",
+                    String.format("Your pending booking request for %s on %s at %s–%s has been cancelled.",
                             resource.getName(), booking.getBookingDate(),
                             booking.getStartTime(), booking.getEndTime()),
                     "BOOKING_CANCELLED"
@@ -313,7 +327,9 @@ public class BookingServiceImpl implements BookingService {
 
             return mapToResponse(updated, resource, user);
         }
-        else if (booking.getStatus() == BookingStatus.APPROVED) {
+
+        // ── Cancel APPROVED bookings (only if slot hasn't passed — already guarded above) ──
+        if (booking.getStatus() == BookingStatus.APPROVED) {
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setAdminReason("Cancelled by user");
             Booking updated = bookingRepository.save(booking);
@@ -326,7 +342,7 @@ public class BookingServiceImpl implements BookingService {
             notificationService.sendNotification(
                     user.getId(),
                     "Booking Cancelled",
-                    String.format("Your approved booking for %s on %s at %s-%s has been cancelled.",
+                    String.format("Your approved booking for %s on %s at %s–%s has been cancelled.",
                             resource.getName(), booking.getBookingDate(),
                             booking.getStartTime(), booking.getEndTime()),
                     "BOOKING_CANCELLED"
@@ -334,9 +350,8 @@ public class BookingServiceImpl implements BookingService {
 
             return mapToResponse(updated, resource, user);
         }
-        else {
-            throw new InvalidBookingException("Only pending or approved bookings can be cancelled");
-        }
+
+        throw new InvalidBookingException("Only pending or approved bookings can be cancelled");
     }
 
     @Override

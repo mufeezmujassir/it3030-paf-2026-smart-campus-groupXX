@@ -141,4 +141,6 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("bookingDate") LocalDate bookingDate,
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime);
+
+    List<Booking> findByStatusAndBookingType(BookingStatus status, String bookingType);
 }
