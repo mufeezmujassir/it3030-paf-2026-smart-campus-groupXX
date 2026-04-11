@@ -19,4 +19,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByRole(Role role);
 
     List<User> findByRole(Role role);
+
+    List<User> findByRoleAndTechnicianSpecializationContainingIgnoreCase(
+            Role role, String specialization);
 }
