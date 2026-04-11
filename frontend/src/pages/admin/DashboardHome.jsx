@@ -1,66 +1,156 @@
-import { Activity, Users, Ticket, Calendar, Database, Server, Wifi, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Activity, Users, Ticket, Calendar, AlertCircle, Loader2 } from 'lucide-react';
+import dashboardService from '../../services/dashboardService';
+import {
+    ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+    PieChart, Pie, Cell, BarChart, Bar, Legend
+} from 'recharts';
+
+const COLORS = ['#880d1e', '#2563eb', '#16a34a', '#d97706'];
 
 const DashboardHome = () => {
+    const [stats, setStats] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const response = await dashboardService.getDashboardStats();
+                setStats(response.data);
+            } catch (error) {
+                console.error('Failed to fetch dashboard stats:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchStats();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="flex-1 flex items-center justify-center p-12">
+                <Loader2 className="w-10 h-10 text-primary animate-spin" />
+            </div>
+        );
+    }
+
+    const userDistData = stats?.userDistribution ? Object.entries(stats.userDistribution).map(([name, value]) => ({ name, value })) : [];
+
     return (
         <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard title="Total Campus Users" value="12,482" change="+12% from last month" icon={<Users className="w-5 h-5 text-blue-500" />} />
-                <StatCard title="Active Tickets" value="42" change="5 urgent priority" icon={<Ticket className="w-5 h-5 text-red-500" />} />
-                <StatCard title="Resource Requests" value="18" change="pending approval" icon={<Calendar className="w-5 h-5 text-green-500" />} />
-                <StatCard title="System Uptime" value="99.98%" change="+0.01% last 30 days" icon={<Activity className="w-5 h-5 text-purple-500" />} />
+                <StatCard
+                    title="Total Campus Users"
+                    value={stats?.totalUsers?.toLocaleString() || '0'}
+                    change="Registered institutional accounts"
+                    icon={<Users className="w-5 h-5 text-blue-500" />}
+                />
+                <StatCard
+                    title="Active Tickets"
+                    value={stats?.activeTickets || '0'}
+                    change="Open or in-progress tickets"
+                    icon={<Ticket className="w-5 h-5 text-red-500" />}
+                />
+                <StatCard
+                    title="Pending Bookings"
+                    value={stats?.pendingBookings || '0'}
+                    change="Awaiting administrative review"
+                    icon={<Calendar className="w-5 h-5 text-green-500" />}
+                />
+                <StatCard
+                    title="Total Resources"
+                    value={stats?.totalResources || '0'}
+                    change="Campus facilities & hardware"
+                    icon={<Activity className="w-5 h-5 text-purple-500" />}
+                />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 space-y-8 bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
-                    <h2 className="text-lg font-bold">Facility Utilization</h2>
-                    <p className="text-sm text-text-secondary -mt-2 mb-6">Real-time occupancy vs total capacity across labs & halls</p>
-                    <div className="h-64 bg-orange-50/30 rounded-lg flex items-center justify-center border border-dashed border-orange-200">
-                        <span className="text-sm text-orange-400 font-medium">Chart Visualization Placeholder</span>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white border border-gray-100 rounded-2xl p-8 shadow-sm flex flex-col items-center justify-center">
+                    <div className="w-full text-left mb-8">
+                        <h2 className="text-2xl font-black text-text-primary leading-tight">User Demographics</h2>
+                        <p className="text-xs font-bold text-text-secondary uppercase tracking-widest">Global Role Distribution Overview</p>
                     </div>
-                </div>
 
-                <div className="space-y-4">
-                    <h2 className="text-lg font-bold mb-4">System Telemetry</h2>
-                    <TelemetryCard icon={<Database />} title="PostgreSQL DB" value="12ms Latency" status="LIVE" />
-                    <TelemetryCard icon={<Server />} title="Redis Cache" value="Hit Rate 98.4%" status="LIVE" />
-                    <TelemetryCard icon={<Activity />} title="Main API Cluster" value="14% Load" status="LIVE" />
-                    <TelemetryCard icon={<Wifi />} title="Auth / Google SSO" value="Operational" status="LIVE" />
-                    
-                    <div className="mt-6 p-4 bg-orange-50 border border-orange-100 rounded-lg">
-                        <div className="flex items-start space-x-3">
-                            <AlertCircle className="w-5 h-5 text-primary mt-0.5" />
-                            <div>
-                                <p className="text-sm font-bold text-primary">Maintenance Window</p>
-                                <p className="text-xs text-text-secondary mt-1">Scheduled maintenance for 'Lab Management' module on Oct 24th, 02:00 AM UTC.</p>
-                            </div>
+                    <div className="h-64 w-full relative">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={userDistData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={70}
+                                    outerRadius={100}
+                                    paddingAngle={8}
+                                    dataKey="value"
+                                    animationBegin={200}
+                                    animationDuration={1500}
+                                >
+                                    {userDistData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    contentStyle={{
+                                        borderRadius: '16px',
+                                        border: 'none',
+                                        boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                                        fontSize: '12px',
+                                        fontWeight: 'bold'
+                                    }}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span className="text-4xl font-black text-text-primary">{stats?.totalUsers || 0}</span>
+                            <span className="text-xs font-bold text-text-secondary uppercase tracking-tighter">Total Active Users</span>
                         </div>
                     </div>
+
+                    <div className="w-full grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8">
+                        {userDistData.map((entry, index) => (
+                            <div key={entry.name} className="flex items-center space-x-3 bg-gray-50 p-3 rounded-xl border border-transparent hover:border-primary/10 transition-colors">
+                                <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black text-text-secondary uppercase tracking-tighter">{entry.name}</span>
+                                    <span className="text-sm font-black text-text-primary">{entry.value}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
-            </div>
-        </div>
+
+
+            </div></div>
     );
 };
 
 const StatCard = ({ title, value, change, icon }) => (
-    <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm relative overflow-hidden group hover:border-primary/20 transition-all">
+    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group hover:border-primary/20 transition-all hover:shadow-lg">
         <div className="flex justify-between items-start mb-4">
-            <p className="text-sm font-medium text-text-secondary">{title}</p>
-            <div className="p-2 bg-gray-50 rounded-lg group-hover:bg-primary/5 transition-colors">{icon}</div>
+            <p className="text-xs font-bold text-text-secondary uppercase tracking-widest">{title}</p>
+            <div className="p-2.5 bg-gray-50 rounded-xl group-hover:bg-primary/5 transition-colors">{icon}</div>
         </div>
-        <h3 className="text-3xl font-bold mb-1">{value}</h3>
-        <p className="text-xs font-medium text-gray-500">{change}</p>
+        <h3 className="text-3xl font-black mb-1">{value}</h3>
+        <div className="flex items-center space-x-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">{change}</p>
+        </div>
     </div>
 )
 
 const TelemetryCard = ({ icon, title, value, status }) => (
-    <div className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+    <div className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-primary/10 transition-all">
         <div className="flex items-center space-x-3">
-            <div className="text-gray-400">{icon}</div>
-            <p className="text-sm font-medium">{title}</p>
+            <div className="text-primary/60">{icon}</div>
+            <p className="text-sm font-semibold text-text-primary">{title}</p>
         </div>
         <div className="text-right">
-            <p className="text-sm font-bold">{value}</p>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{status}</p>
+            <p className="text-sm font-black text-text-secondary">{value}</p>
+            <p className="text-[9px] font-black text-emerald-500 tracking-widest uppercase flex items-center justify-end">
+                <span className="w-1 h-1 bg-emerald-500 rounded-full mr-1"></span>
+                {status}
+            </p>
         </div>
     </div>
 )

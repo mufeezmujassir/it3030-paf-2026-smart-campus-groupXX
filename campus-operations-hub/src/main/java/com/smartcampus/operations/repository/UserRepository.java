@@ -22,4 +22,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByRoleAndTechnicianSpecializationContainingIgnoreCase(
             Role role, String specialization);
+
+    long countByRole(Role role);
+
+    long countByCreatedAtAfter(java.time.LocalDateTime date);
 }

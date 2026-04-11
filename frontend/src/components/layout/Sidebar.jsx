@@ -13,32 +13,29 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
 
     const menuItems = {
         ADMIN: [
-            { icon: <LayoutDashboard size={20} />, label: 'Dashboard', path: '/admin' },
-            { icon: <Users size={20} />, label: 'User Directory', path: '/admin/users' },
+            { icon: <LayoutDashboard size={20} />, label: 'My Dashboard', path: '/admin' },
+            { icon: <Users size={20} />, label: 'User Management', path: '/admin/users' },
             { icon: <Building size={20} />, label: 'Assets & Labs', path: '/admin/assets' },
-            { icon: <Calendar size={20} />, label: 'Schedules', path: '/admin/schedules' },
             { icon: <CalendarDays size={20} />, label: 'Booking Management', path: '/admin/bookings' },
             { icon: <Ticket size={20} />, label: 'Support Tickets', path: '/tickets' },
         ],
         STUDENT: [
             { icon: <LayoutDashboard size={20} />, label: 'My Dashboard', path: '/student' },
-            { icon: <Building size={20} />, label: 'Catalogue', path: '/resources' },
+            { icon: <Building size={20} />, label: 'Assets & Labs', path: '/resources' },
             { icon: <CalendarDays size={20} />, label: 'My Bookings', path: '/student/my-bookings' },
             { icon: <BookOpen size={20} />, label: 'My Courses', path: '/student/courses' },
             { icon: <GraduationCap size={20} />, label: 'Grades', path: '/student/grades' },
             { icon: <Ticket size={20} />, label: 'Help Desk', path: '/tickets' },
         ],
         STAFF: [
-            { icon: <LayoutDashboard size={20} />, label: 'Staff Portal', path: '/staff' },
-            { icon: <Building size={20} />, label: 'Catalogue', path: '/resources' },
-            { icon: <ClipboardList size={20} />, label: 'Management', path: '/staff/manage' },
+            { icon: <LayoutDashboard size={20} />, label: 'My Dashboard', path: '/staff' },
+            { icon: <Building size={20} />, label: 'Assets & Labs', path: '/resources' },
             { icon: <CalendarDays size={20} />, label: 'My Bookings', path: '/staff/my-bookings' },
-            { icon: <Briefcase size={20} />, label: 'My Department', path: '/staff/department' },
             { icon: <Ticket size={20} />, label: 'Service Requests', path: '/tickets' },
         ],
         TECHNICIAN: [
             { icon: <LayoutDashboard size={20} />, label: 'Tech Console', path: '/technician' },
-            { icon: <Wrench size={20} />, label: 'My Assignments', path: '/tickets' },
+            { icon: <Wrench size={20} />, label: 'Assigned Tickets', path: '/tickets' },
         ],
     };
 
@@ -79,7 +76,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
                         className={`flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${location.pathname === item.path
                             ? 'bg-primary text-white shadow-lg shadow-primary/25'
                             : 'text-text-secondary hover:bg-primary/[0.04] hover:text-primary'
-                        }`}
+                            }`}
                     >
                         <div className={`transition-colors duration-300 ${location.pathname === item.path ? 'text-white' : 'text-gray-400 group-hover:text-primary'}`}>
                             {item.icon}
@@ -98,7 +95,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
                     className={`flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${location.pathname === '/settings'
                         ? 'bg-primary text-white shadow-lg shadow-primary/25'
                         : 'text-text-secondary hover:bg-primary/[0.04] hover:text-primary'
-                    }`}
+                        }`}
                 >
                     <Settings className={`w-5 h-5 transition-colors ${location.pathname === '/settings' ? 'text-white' : 'text-gray-400 group-hover:text-primary'}`} />
                     <span>Account Settings</span>

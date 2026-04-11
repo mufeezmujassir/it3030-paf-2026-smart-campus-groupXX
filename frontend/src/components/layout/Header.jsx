@@ -1,9 +1,9 @@
 // src/components/layout/Header.jsx
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Search, Bell, Menu, User, Settings, LogOut, Leaf, X, AlertCircle, CheckCircle, Loader2, XCircle } from 'lucide-react';import { Link } from 'react-router-dom';
-import api from '../../services/api';
-
+import { Search, Bell, Menu, User, Settings, LogOut, Leaf, X, AlertCircle, CheckCircle, Loader2, XCircle, PlusCircle, Trash2, Edit3, MessageSquare, Key, ShieldCheck, UserPlus, UserMinus } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import notificationService from '../../services/notificationService';
 
 const Header = ({ toggleSidebar }) => {
     const { user, logout } = useAuth();
@@ -14,14 +14,13 @@ const Header = ({ toggleSidebar }) => {
 
     useEffect(() => {
         fetchUnreadCount();
-        // Poll for new notifications every 30 seconds
         const interval = setInterval(fetchUnreadCount, 30000);
         return () => clearInterval(interval);
     }, []);
 
     const fetchUnreadCount = async () => {
         try {
-            const response = await api.get('/notifications/unread-count');
+            const response = await notificationService.getUnreadCount();
             setUnreadCount(response.data);
         } catch (error) {
             console.error('Failed to fetch unread count:', error);
@@ -31,7 +30,7 @@ const Header = ({ toggleSidebar }) => {
     const fetchNotifications = async () => {
         setLoadingNotifications(true);
         try {
-            const response = await api.get('/notifications', { params: { size: 20 } });
+            const response = await notificationService.getNotifications({ size: 20 });
             setNotifications(response.data.content || response.data);
         } catch (error) {
             console.error('Failed to fetch notifications:', error);
@@ -42,11 +41,11 @@ const Header = ({ toggleSidebar }) => {
 
     const markAsRead = async (id) => {
         try {
-            await api.patch(`/notifications/${id}/read`);
+            await notificationService.markAsRead(id);
             setNotifications(prev =>
                 prev.map(n => n.id === id ? { ...n, isRead: true } : n)
             );
-            setUnreadCount(prev => prev - 1);
+            setUnreadCount(prev => Math.max(0, prev - 1));
         } catch (error) {
             console.error('Failed to mark as read:', error);
         }
@@ -54,7 +53,7 @@ const Header = ({ toggleSidebar }) => {
 
     const markAllAsRead = async () => {
         try {
-            await api.patch('/notifications/read-all');
+            await notificationService.markAllAsRead();
             setNotifications(prev =>
                 prev.map(n => ({ ...n, isRead: true }))
             );
@@ -71,6 +70,36 @@ const Header = ({ toggleSidebar }) => {
 
     const getNotificationIcon = (type) => {
         switch (type) {
+            case 'RESOURCE_CREATED':
+                return <PlusCircle className="w-5 h-5 text-emerald-500" />;
+            case 'RESOURCE_UPDATED':
+                return <Edit3 className="w-5 h-5 text-amber-500" />;
+            case 'RESOURCE_DELETED':
+                return <Trash2 className="w-5 h-5 text-rose-500" />;
+            case 'USER_CREATED':
+                return <UserPlus className="w-5 h-5 text-emerald-500" />;
+            case 'USER_DELETED':
+                return <UserMinus className="w-5 h-5 text-rose-500" />;
+            case 'TICKET_CREATED':
+                return <PlusCircle className="w-5 h-5 text-primary" />;
+            case 'TICKET_ASSIGNED':
+                return <User className="w-5 h-5 text-amber-500" />;
+            case 'TICKET_STATUS_CHANGED':
+                return <AlertCircle className="w-5 h-5 text-blue-500" />;
+            case 'TICKET_RESOLVED':
+                return <CheckCircle className="w-5 h-5 text-emerald-500" />;
+            case 'TICKET_REJECTED':
+                return <XCircle className="w-5 h-5 text-rose-500" />;
+            case 'TICKET_COMMENT':
+                return <MessageSquare className="w-5 h-5 text-blue-400" />;
+            case 'LOGIN_SUCCESS':
+                return <ShieldCheck className="w-5 h-5 text-emerald-500" />;
+            case 'PROFILE_UPDATED':
+                return <User className="w-5 h-5 text-amber-500" />;
+            case 'PASSWORD_CHANGED':
+                return <Key className="w-5 h-5 text-amber-500" />;
+            case 'MFA_TOGGLED':
+                return <ShieldCheck className="w-5 h-5 text-primary" />;
             case 'BOOKING_EXPIRING_SOON':
                 return <AlertCircle className="w-5 h-5 text-amber-500" />;
             case 'BOOKING_EXPIRED':
@@ -82,7 +111,7 @@ const Header = ({ toggleSidebar }) => {
             case 'BOOKING_CREATED':
                 return <Bell className="w-5 h-5 text-primary" />;
             case 'BOOKING_UPDATED':
-                return <Bell className="w-5 h-5 text-primary" />;
+                return <Bell className="w-5 h-5 text-accent" />;
             default:
                 return <Bell className="w-5 h-5 text-primary" />;
         }

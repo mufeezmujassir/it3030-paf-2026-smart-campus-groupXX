@@ -27,6 +27,7 @@ public class TicketCommentServiceImpl implements TicketCommentService {
     private final TicketCommentRepository commentRepository;
     private final IncidentTicketRepository ticketRepository;
     private final UserRepository userRepository;
+    private final com.smartcampus.operations.service.NotificationService notificationService;
 
     @Override
     @Transactional
@@ -40,7 +41,19 @@ public class TicketCommentServiceImpl implements TicketCommentService {
                 .content(request.getContent())
                 .build();
 
-        return mapToResponse(commentRepository.save(comment));
+        CommentResponse response = mapToResponse(commentRepository.save(comment));
+
+        // Notify ticket creator if someone else comments
+        if (!ticket.getCreatedBy().getId().equals(user.getId())) {
+            notificationService.sendNotification(
+                    ticket.getCreatedBy().getId(),
+                    "New Ticket Comment",
+                    String.format("New comment on your ticket '%s' by %s", ticket.getTitle(), user.getFullName()),
+                    "TICKET_COMMENT"
+            );
+        }
+
+        return response;
     }
 
     @Override

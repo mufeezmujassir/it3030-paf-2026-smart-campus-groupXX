@@ -19,6 +19,8 @@ import TicketDetail from '../pages/tickets/TicketDetail';
 import TechnicianDashboard from '../pages/technician/TechnicianDashboard';
 import AdminBookingManagement from '../pages/admin/AdminBookingManagement';
 import MyBookings from '../pages/MyBookings';
+import StudentDashboard from '../pages/student/StudentDashboard';
+import StaffDashboard from '../pages/staff/StaffDashboard';
 
 const AppRoutes = () => {
     return (
@@ -66,7 +68,7 @@ const AppRoutes = () => {
                         <Outlet />
                     </RoleBasedRoute>
                 }>
-                    <Route index element={<div className="p-8">Student Dashboard</div>} />
+                    <Route index element={<StudentDashboard />} />
                     <Route path="my-bookings" element={<MyBookings />} />
                     <Route path="courses" element={<div className="p-8">My Courses</div>} />
                     <Route path="grades" element={<div className="p-8">Grades</div>} />
@@ -78,7 +80,7 @@ const AppRoutes = () => {
                         <Outlet />
                     </RoleBasedRoute>
                 }>
-                    <Route index element={<div className="p-8">Staff Dashboard</div>} />
+                    <Route index element={<StaffDashboard />} />
                     <Route path="my-bookings" element={<MyBookings />} />
                     <Route path="manage" element={<div className="p-8">Management</div>} />
                     <Route path="department" element={<div className="p-8">My Department</div>} />

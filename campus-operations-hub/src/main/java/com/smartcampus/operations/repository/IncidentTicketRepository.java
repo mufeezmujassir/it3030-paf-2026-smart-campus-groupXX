@@ -19,4 +19,13 @@ public interface IncidentTicketRepository extends JpaRepository<IncidentTicket, 
     List<IncidentTicket> findByStatus(TicketStatus status);
 
     List<IncidentTicket> findByCreatedByAndStatus(User createdBy, TicketStatus status);
+
+    // Dashboard count methods
+    long countByStatus(TicketStatus status);
+
+    long countByAssignedTo(User assignedTo);
+
+    long countByAssignedToAndStatus(User assignedTo, TicketStatus status);
+
+    long countByCreatedBy(User createdBy);
 }

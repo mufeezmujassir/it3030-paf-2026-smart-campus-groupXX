@@ -4,10 +4,13 @@ import com.smartcampus.operations.dto.ResourceCreateRequest;
 import com.smartcampus.operations.dto.ResourceResponse;
 import com.smartcampus.operations.dto.ResourceUpdateRequest;
 import com.smartcampus.operations.entity.Resource;
+import com.smartcampus.operations.entity.User;
 import com.smartcampus.operations.exception.ResourceNotFoundException;
 import com.smartcampus.operations.mapper.ResourceMapper;
 import com.smartcampus.operations.repository.ResourceRepository;
 import com.smartcampus.operations.repository.ResourceSpecification;
+import com.smartcampus.operations.repository.UserRepository;
+import com.smartcampus.operations.service.NotificationService;
 import com.smartcampus.operations.service.ResourceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,20 +28,34 @@ public class ResourceServiceImpl implements ResourceService {
 
     private final ResourceRepository resourceRepository;
     private final ResourceMapper resourceMapper;
+    private final NotificationService notificationService;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional
-    public ResourceResponse createResource(ResourceCreateRequest request) {
+    public ResourceResponse createResource(ResourceCreateRequest request, String userEmail) {
         Resource resource = resourceMapper.toEntity(request);
         resource.setImageId(request.getImageId());
         Resource saved = resourceRepository.save(resource);
         log.info("Resource created: {}", saved.getName());
+
+        // Send notification to admin who created the resource
+        User admin = userRepository.findByEmail(userEmail).orElse(null);
+        if (admin != null) {
+            notificationService.sendNotification(
+                    admin.getId(),
+                    "Resource Created",
+                    String.format("Resource '%s' has been created successfully.", saved.getName()),
+                    "RESOURCE_CREATED"
+            );
+        }
+
         return resourceMapper.toResponse(saved);
     }
 
     @Override
     @Transactional
-    public ResourceResponse updateResource(UUID id, ResourceUpdateRequest request) {
+    public ResourceResponse updateResource(UUID id, ResourceUpdateRequest request, String userEmail) {
         Resource existing = resourceRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Resource not found with id: " + id));
 
@@ -55,17 +72,41 @@ public class ResourceServiceImpl implements ResourceService {
 
         Resource updated = resourceRepository.save(existing);
         log.info("Resource updated: {}", updated.getId());
+
+        // Send notification to admin who updated the resource
+        User admin = userRepository.findByEmail(userEmail).orElse(null);
+        if (admin != null) {
+            notificationService.sendNotification(
+                    admin.getId(),
+                    "Resource Updated",
+                    String.format("Resource '%s' has been updated successfully.", updated.getName()),
+                    "RESOURCE_UPDATED"
+            );
+        }
+
         return resourceMapper.toResponse(updated);
     }
 
     @Override
     @Transactional
-    public void deleteResource(UUID id) {
-        if (!resourceRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Resource not found with id: " + id);
-        }
+    public void deleteResource(UUID id, String userEmail) {
+        Resource resource = resourceRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Resource not found with id: " + id));
+
+        String resourceName = resource.getName();
         resourceRepository.deleteById(id);
         log.info("Resource deleted: {}", id);
+
+        // Send notification to admin who deleted the resource
+        User admin = userRepository.findByEmail(userEmail).orElse(null);
+        if (admin != null) {
+            notificationService.sendNotification(
+                    admin.getId(),
+                    "Resource Deleted",
+                    String.format("Resource '%s' has been deleted successfully.", resourceName),
+                    "RESOURCE_DELETED"
+            );
+        }
     }
 
     @Override

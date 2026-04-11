@@ -121,4 +121,11 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("bookingDate") LocalDate bookingDate,
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime);
+
+    // Dashboard count methods
+    long countByStatus(BookingStatus status);
+
+    long countByUserId(UUID userId);
+
+    long countByUserIdAndStatus(UUID userId, BookingStatus status);
 }
