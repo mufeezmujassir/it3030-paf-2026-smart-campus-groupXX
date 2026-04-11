@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Leaf, Lock, Mail, ArrowRight, ShieldCheck, HelpCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import loginBg from '../assets/loginbg.jpg';
@@ -8,18 +8,9 @@ import loginBg from '../assets/loginbg.jpg';
 const Login = () => {
     const { login } = useAuth();
     const location = useLocation();
+    const navigate = useNavigate();
     const [credentials, setCredentials] = useState({ email: '', password: '' });
     const [loading, setLoading] = useState(false);
-
-    useEffect(() => {
-        const params = new URLSearchParams(location.search);
-        const error = params.get('error');
-        if (error) {
-            toast.error(error === 'Access Denied: You are not registered in the system'
-                ? 'Credential failed: You don\'t have access to login'
-                : error);
-        }
-    }, [location]);
 
     const handleChange = (e) => setCredentials({ ...credentials, [e.target.name]: e.target.value });
 

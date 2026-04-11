@@ -29,7 +29,9 @@ export const AuthProvider = ({ children }) => {
             handleAuthResponse(data);
             return true;
         } catch (error) {
-            const errorMsg = error.response?.data?.message || error.response?.data?.error || 'Login failed';
+            const errorMsg = error.response?.status === 401 
+                ? 'Wrong credentials. Please check your email and password.' 
+                : (error.response?.data?.message || 'Login failed');
             toast.error(errorMsg);
             return false;
         }

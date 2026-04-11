@@ -46,12 +46,18 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/resources/images/**").permitAll()
+                        .requestMatchers("/api/resources/*/image").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         // User-specific endpoints (accessible to all authenticated users)
                         .requestMatchers("/api/users/me/**").authenticated()
                         // Admin-only endpoints
-                        .requestMatchers("/api/users/**").hasRole("ADMIN")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // Resource management (admin only for data modification)
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/resources/**").hasRole("ADMIN")
+                        .requestMatchers(org.springframework.http.HttpMethod.PUT, "/api/resources/**").hasRole("ADMIN")
+                        .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/api/resources/**").hasRole("ADMIN")
                         // All other endpoints require authentication
                         .anyRequest().authenticated()
                 )
