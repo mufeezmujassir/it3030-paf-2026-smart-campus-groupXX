@@ -108,8 +108,7 @@ public class TicketAttachmentServiceImpl implements TicketAttachmentService {
     private boolean canAccessTicket(User user, IncidentTicket ticket) {
         return switch (user.getRole()) {
             case ADMIN -> true;
-            case TECHNICIAN -> ticket.getAssignedTo() != null &&
-                    ticket.getAssignedTo().getId().equals(user.getId());
+            case TECHNICIAN -> true;
             default -> ticket.getCreatedBy().getId().equals(user.getId());
         };
     }
