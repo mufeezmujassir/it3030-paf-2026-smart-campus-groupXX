@@ -32,7 +32,6 @@ public class TicketAttachment {
     @Column(name = "file_size")
     private Long fileSize;
 
-    @Lob
     @Column(name = "data", nullable = true, columnDefinition = "BYTEA")
     private byte[] data;
 

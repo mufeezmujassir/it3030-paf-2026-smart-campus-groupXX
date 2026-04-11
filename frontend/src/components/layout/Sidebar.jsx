@@ -13,8 +13,8 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
 
     const menuItems = {
         ADMIN: [
-            { icon: <LayoutDashboard size={20} />, label: 'Dashboard', path: '/admin' },
-            { icon: <Users size={20} />, label: 'User Directory', path: '/admin/users' },
+            { icon: <LayoutDashboard size={20} />, label: 'My Dashboard', path: '/admin' },
+            { icon: <Users size={20} />, label: 'User Management', path: '/admin/users' },
             { icon: <Building size={20} />, label: 'Assets & Labs', path: '/admin/assets' },
             { icon: <CalendarDays size={20} />, label: 'Booking Management', path: '/admin/bookings' },
             { icon: <Ticket size={20} />, label: 'Support Tickets', path: '/tickets' },
@@ -28,16 +28,14 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
             { icon: <Ticket size={20} />, label: 'Help Desk', path: '/tickets' },
         ],
         STAFF: [
-            { icon: <LayoutDashboard size={20} />, label: 'Staff Portal', path: '/staff' },
-            { icon: <Building size={20} />, label: 'Catalogue', path: '/resources' },
-            { icon: <ClipboardList size={20} />, label: 'Management', path: '/staff/manage' },
+            { icon: <LayoutDashboard size={20} />, label: 'My Dashboard', path: '/staff' },
+            { icon: <Building size={20} />, label: 'Assets & Labs', path: '/resources' },
             { icon: <CalendarDays size={20} />, label: 'My Bookings', path: '/staff/my-bookings' },
-            { icon: <Briefcase size={20} />, label: 'My Department', path: '/staff/department' },
             { icon: <Ticket size={20} />, label: 'Service Requests', path: '/tickets' },
         ],
         TECHNICIAN: [
             { icon: <LayoutDashboard size={20} />, label: 'Tech Console', path: '/technician' },
-            { icon: <Wrench size={20} />, label: 'My Assignments', path: '/tickets' },
+            { icon: <Wrench size={20} />, label: 'Assigned Tickets', path: '/tickets' },
         ],
     };
 

@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Activity, Users, Ticket, Calendar, Database, Server, Wifi, AlertCircle, Loader2 } from 'lucide-react';
+import { Activity, Users, Ticket, Calendar, AlertCircle, Loader2 } from 'lucide-react';
 import dashboardService from '../../services/dashboardService';
+import {
+    ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+    PieChart, Pie, Cell, BarChart, Bar, Legend
+} from 'recharts';
+
+const COLORS = ['#880d1e', '#2563eb', '#16a34a', '#d97706'];
 
 const DashboardHome = () => {
     const [stats, setStats] = useState(null);
@@ -28,63 +34,94 @@ const DashboardHome = () => {
         );
     }
 
+    const userDistData = stats?.userDistribution ? Object.entries(stats.userDistribution).map(([name, value]) => ({ name, value })) : [];
+
     return (
         <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard 
-                    title="Total Campus Users" 
-                    value={stats?.totalUsers?.toLocaleString() || '0'} 
-                    change="Registered institutional accounts" 
-                    icon={<Users className="w-5 h-5 text-blue-500" />} 
+                <StatCard
+                    title="Total Campus Users"
+                    value={stats?.totalUsers?.toLocaleString() || '0'}
+                    change="Registered institutional accounts"
+                    icon={<Users className="w-5 h-5 text-blue-500" />}
                 />
-                <StatCard 
-                    title="Active Tickets" 
-                    value={stats?.activeTickets || '0'} 
-                    change="Open or in-progress tickets" 
-                    icon={<Ticket className="w-5 h-5 text-red-500" />} 
+                <StatCard
+                    title="Active Tickets"
+                    value={stats?.activeTickets || '0'}
+                    change="Open or in-progress tickets"
+                    icon={<Ticket className="w-5 h-5 text-red-500" />}
                 />
-                <StatCard 
-                    title="Pending Bookings" 
-                    value={stats?.pendingBookings || '0'} 
-                    change="Awaiting administrative review" 
-                    icon={<Calendar className="w-5 h-5 text-green-500" />} 
+                <StatCard
+                    title="Pending Bookings"
+                    value={stats?.pendingBookings || '0'}
+                    change="Awaiting administrative review"
+                    icon={<Calendar className="w-5 h-5 text-green-500" />}
                 />
-                <StatCard 
-                    title="Total Resources" 
-                    value={stats?.totalResources || '0'} 
-                    change="Campus facilities & hardware" 
-                    icon={<Activity className="w-5 h-5 text-purple-500" />} 
+                <StatCard
+                    title="Total Resources"
+                    value={stats?.totalResources || '0'}
+                    change="Campus facilities & hardware"
+                    icon={<Activity className="w-5 h-5 text-purple-500" />}
                 />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 space-y-8 bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
-                    <h2 className="text-lg font-bold">Facility Utilization</h2>
-                    <p className="text-sm text-text-secondary -mt-2 mb-6">Real-time occupancy vs total capacity across labs & halls</p>
-                    <div className="h-64 bg-surface rounded-lg flex items-center justify-center border border-dashed border-gray-200">
-                        <span className="text-sm text-text-secondary font-medium italic">Advanced Analytics Dashboard Coming Soon</span>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white border border-gray-100 rounded-2xl p-8 shadow-sm flex flex-col items-center justify-center">
+                    <div className="w-full text-left mb-8">
+                        <h2 className="text-2xl font-black text-text-primary leading-tight">User Demographics</h2>
+                        <p className="text-xs font-bold text-text-secondary uppercase tracking-widest">Global Role Distribution Overview</p>
                     </div>
-                </div>
 
-                <div className="space-y-4">
-                    <h2 className="text-lg font-bold mb-4">System Telemetry</h2>
-                    <TelemetryCard icon={<Database className="w-4 h-4" />} title="PostgreSQL DB" value="12ms Latency" status="LIVE" />
-                    <TelemetryCard icon={<Server className="w-4 h-4" />} title="Spring Boot Cluster" value="Healthy" status="LIVE" />
-                    <TelemetryCard icon={<Activity className="w-4 h-4" />} title="Notification Engine" value="Active" status="LIVE" />
-                    <TelemetryCard icon={<Wifi className="w-4 h-4" />} title="Main API Endpoint" value="200 OK" status="LIVE" />
-                    
-                    <div className="mt-6 p-4 bg-primary/5 border border-primary/10 rounded-lg">
-                        <div className="flex items-start space-x-3">
-                            <AlertCircle className="w-5 h-5 text-primary mt-0.5" />
-                            <div>
-                                <p className="text-sm font-bold text-primary">Administrative Notice</p>
-                                <p className="text-xs text-text-secondary mt-1">Resource booking policies for next semester are now being reviewed for auto-approval optimizations.</p>
-                            </div>
+                    <div className="h-64 w-full relative">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={userDistData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={70}
+                                    outerRadius={100}
+                                    paddingAngle={8}
+                                    dataKey="value"
+                                    animationBegin={200}
+                                    animationDuration={1500}
+                                >
+                                    {userDistData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    contentStyle={{
+                                        borderRadius: '16px',
+                                        border: 'none',
+                                        boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                                        fontSize: '12px',
+                                        fontWeight: 'bold'
+                                    }}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span className="text-4xl font-black text-text-primary">{stats?.totalUsers || 0}</span>
+                            <span className="text-xs font-bold text-text-secondary uppercase tracking-tighter">Total Active Users</span>
                         </div>
                     </div>
+
+                    <div className="w-full grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8">
+                        {userDistData.map((entry, index) => (
+                            <div key={entry.name} className="flex items-center space-x-3 bg-gray-50 p-3 rounded-xl border border-transparent hover:border-primary/10 transition-colors">
+                                <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black text-text-secondary uppercase tracking-tighter">{entry.name}</span>
+                                    <span className="text-sm font-black text-text-primary">{entry.value}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
-            </div>
-        </div>
+
+
+            </div></div>
     );
 };
 

@@ -42,6 +42,13 @@ public class DashboardController {
             stats.put("activeTickets", ticketRepository.countByStatus(TicketStatus.OPEN) + ticketRepository.countByStatus(TicketStatus.IN_PROGRESS));
             stats.put("pendingBookings", bookingRepository.countByStatus(BookingStatus.PENDING));
             stats.put("totalResources", resourceRepository.count());
+
+            // User Distribution for Pie Chart
+            java.util.Map<String, Long> userDist = new java.util.HashMap<>();
+            for (Role r : Role.values()) {
+                userDist.put(r.name(), userRepository.countByRole(r));
+            }
+            stats.put("userDistribution", userDist);
         } else if (role == Role.STUDENT || role == Role.STAFF) {
             stats.put("myPendingBookings", bookingRepository.countByUserIdAndStatus(user.getId(), BookingStatus.PENDING));
             stats.put("myApprovedBookings", bookingRepository.countByUserIdAndStatus(user.getId(), BookingStatus.APPROVED));
