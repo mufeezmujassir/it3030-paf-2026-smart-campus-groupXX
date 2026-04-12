@@ -1,0 +1,730 @@
+// src/pages/technician/MaintenanceRequests.jsx
+import React, { useState, useEffect } from 'react';
+import { Wrench, AlertCircle, Calendar, Clock, CheckCircle, XCircle, Loader2, Play, Check, RefreshCw, Info, Ban, Trash2 } from 'lucide-react';
+import api from '../../services/api';
+import { toast } from 'react-toastify';
+import { format } from 'date-fns';
+
+const MaintenanceRequests = () => {
+    const [requests, setRequests] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedRequest, setSelectedRequest] = useState(null);
+    const [showExtensionModal, setShowExtensionModal] = useState(false);
+    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+    const [requestToCancel, setRequestToCancel] = useState(null);
+    const [extensionDays, setExtensionDays] = useState('');
+    const [extensionReason, setExtensionReason] = useState('');
+    const [processing, setProcessing] = useState(false);
+    const [filterStatus, setFilterStatus] = useState('ALL');
+
+    useEffect(() => {
+        fetchMaintenanceRequests();
+    }, []);
+
+    const fetchMaintenanceRequests = async () => {
+        setLoading(true);
+        try {
+            const response = await api.get('/bookings/my', { params: { size: 100 } });
+            let allBookings = response.data.content || response.data;
+            const maintenanceBookings = allBookings.filter(b => b.bookingType === 'MAINTENANCE');
+
+            const mrResponse = await api.get('/maintenance/my-requests');
+            const maintenanceRequests = mrResponse.data || [];
+
+            const requestsWithStatus = maintenanceBookings.map((booking) => {
+                const matchingRequest = maintenanceRequests.find(mr => mr.bookingId === booking.id);
+
+                let displayStatus;
+                if (booking.status === 'REJECTED') {
+                    displayStatus = 'CANCELLED';
+                } else if (booking.status === 'CANCELLED') {
+                    displayStatus = 'CANCELLED';
+                } else if (matchingRequest?.maintenanceStatus) {
+                    displayStatus = matchingRequest.maintenanceStatus;
+                } else {
+                    displayStatus = booking.status === 'APPROVED' ? 'APPROVED' : 'PENDING';
+                }
+
+                return {
+                    ...booking,
+                    maintenanceStatus: displayStatus,
+                    maintenanceStartedAt: matchingRequest?.startedAt,
+                    maintenanceCompletedAt: matchingRequest?.completedAt,
+                    maintenanceId: matchingRequest?.id,
+                    extensionRequested: matchingRequest?.extensionRequested,
+                    extensionReason: matchingRequest?.extensionReason,
+                };
+            });
+
+            setRequests(requestsWithStatus);
+        } catch (error) {
+            console.error('Failed to fetch maintenance requests:', error);
+            toast.error('Failed to load maintenance requests');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ─── Build a real local Date from booking fields ─────────────────────
+    const buildScheduledStart = (bookingDate, timeStr) => {
+        const [h, m] = timeStr.split(':').map(Number);
+        let year, month, day;
+        if (Array.isArray(bookingDate)) {
+            [year, month, day] = [bookingDate[0], bookingDate[1] - 1, bookingDate[2]];
+        } else {
+            const parts = String(bookingDate).split('-').map(Number);
+            [year, month, day] = [parts[0], parts[1] - 1, parts[2]];
+        }
+        return new Date(year, month, day, h, m, 0, 0);
+    };
+
+    // ─── Time-window logic ───────────────────────────────────────────────
+    const getWindowDates = (request) => {
+        const scheduled = buildScheduledStart(request.bookingDate, request.startTime);
+        const graceStart = new Date(scheduled.getTime() - 15 * 60 * 1000);
+        const graceEnd   = new Date(scheduled.getTime() + 30 * 60 * 1000);
+        return { scheduled, graceStart, graceEnd };
+    };
+
+    const isSameCalendarDay = (a, b) =>
+        a.getFullYear() === b.getFullYear() &&
+        a.getMonth()    === b.getMonth()    &&
+        a.getDate()     === b.getDate();
+
+    const canStartMaintenance = (request) => {
+        const now = new Date();
+        const { scheduled, graceStart, graceEnd } = getWindowDates(request);
+        return isSameCalendarDay(now, scheduled) && now >= graceStart && now <= graceEnd;
+    };
+
+    const getStartButtonStatus = (request) => {
+        const now = new Date();
+        const { scheduled, graceStart, graceEnd } = getWindowDates(request);
+
+        const todayMidnight   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const bookingMidnight = new Date(scheduled.getFullYear(), scheduled.getMonth(), scheduled.getDate());
+
+        if (bookingMidnight > todayMidnight) {
+            return {
+                canStart: false,
+                message: `Maintenance scheduled for ${format(scheduled, 'MMM d, yyyy')} at ${format(scheduled, 'h:mm a')}. You can start between ${format(graceStart, 'h:mm a')} and ${format(graceEnd, 'h:mm a')} on that day.`,
+                variant: 'info',
+            };
+        }
+        if (bookingMidnight < todayMidnight) {
+            return {
+                canStart: false,
+                message: `This maintenance window (${format(scheduled, 'MMM d, yyyy')} at ${format(scheduled, 'h:mm a')}) has already passed.`,
+                variant: 'error',
+            };
+        }
+        if (now < graceStart) {
+            const minutesUntil = Math.ceil((graceStart.getTime() - now.getTime()) / 60000);
+            return {
+                canStart: false,
+                message: `Too early to start. You can begin at ${format(graceStart, 'h:mm a')} (in about ${minutesUntil} minute${minutesUntil !== 1 ? 's' : ''}). The window opens 15 minutes before the scheduled ${format(scheduled, 'h:mm a')} start.`,
+                variant: 'warning',
+            };
+        }
+        if (now > graceEnd) {
+            return {
+                canStart: false,
+                message: `The start window has closed. You needed to begin by ${format(graceEnd, 'h:mm a')} (30 minutes after the scheduled ${format(scheduled, 'h:mm a')} start).`,
+                variant: 'error',
+            };
+        }
+        return {
+            canStart: true,
+            message: `Start window is open: ${format(graceStart, 'h:mm a')} – ${format(graceEnd, 'h:mm a')}. Click "Start Maintenance" to begin.`,
+            variant: 'success',
+        };
+    };
+
+    const getTimeStatusBadge = (request) => {
+        if (request.maintenanceStatus === 'CANCELLED') return { text: 'Cancelled', className: 'bg-gray-100 text-gray-600' };
+
+        const now = new Date();
+        const { scheduled, graceEnd } = getWindowDates(request);
+        const todayMidnight   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const bookingMidnight = new Date(scheduled.getFullYear(), scheduled.getMonth(), scheduled.getDate());
+
+        if (bookingMidnight > todayMidnight) return { text: 'Upcoming',           className: 'bg-blue-100 text-blue-700' };
+        if (bookingMidnight < todayMidnight) return { text: 'Expired',            className: 'bg-red-100 text-red-700' };
+        if (canStartMaintenance(request))    return { text: 'Ready to Start',     className: 'bg-green-100 text-green-700' };
+        if (now > graceEnd)                  return { text: 'Window Closed',      className: 'bg-red-100 text-red-700' };
+        return                                      { text: 'Waiting for Window', className: 'bg-yellow-100 text-yellow-700' };
+    };
+
+    // ─── Cancel helpers ──────────────────────────────────────────────────
+    const openCancelConfirm = (request) => {
+        setRequestToCancel(request);
+        setShowCancelConfirm(true);
+    };
+
+    const handleCancelRequest = async () => {
+        if (!requestToCancel) return;
+        setProcessing(true);
+        try {
+            await api.delete(`/bookings/${requestToCancel.id}/cancel`);
+            toast.success('Maintenance request cancelled successfully');
+            setShowCancelConfirm(false);
+            setRequestToCancel(null);
+            fetchMaintenanceRequests();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to cancel maintenance request');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    // ─── Action handlers ─────────────────────────────────────────────────
+    const handleStartMaintenance = async (booking) => {
+        setProcessing(true);
+        try {
+            await api.post(`/maintenance/${booking.id}/start`);
+            toast.success('Maintenance started successfully');
+            fetchMaintenanceRequests();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to start maintenance');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    const handleCompleteMaintenance = async (booking) => {
+        setProcessing(true);
+        try {
+            await api.post(`/maintenance/${booking.id}/complete`);
+            toast.success('Maintenance completed successfully');
+            fetchMaintenanceRequests();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to complete maintenance');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    const handleRequestExtension = async () => {
+        if (!selectedRequest || !extensionDays || extensionDays < 1) {
+            toast.error('Please enter a valid number of days');
+            return;
+        }
+        setProcessing(true);
+        try {
+            await api.post(`/maintenance/${selectedRequest.id}/extend?days=${extensionDays}`);
+            toast.success(`Extension request for ${extensionDays} days submitted`);
+            setShowExtensionModal(false);
+            setExtensionDays('');
+            setExtensionReason('');
+            setSelectedRequest(null);
+            fetchMaintenanceRequests();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to request extension');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    // ─── Config helpers ──────────────────────────────────────────────────
+    const getStatusConfig = (status) => ({
+        PENDING:             { bg: 'bg-amber-100',  text: 'text-amber-700',  border: 'border-amber-200',  icon: <Clock className="w-4 h-4" />,       label: 'Pending Approval',          actions: ['cancel'] },
+        APPROVED:            { bg: 'bg-emerald-100',text: 'text-emerald-700',border: 'border-emerald-200',icon: <CheckCircle className="w-4 h-4" />,   label: 'Approved — Ready to Start',  actions: ['start', 'cancel'] },
+        IN_PROGRESS:         { bg: 'bg-blue-100',   text: 'text-blue-700',   border: 'border-blue-200',   icon: <Play className="w-4 h-4" />,         label: 'In Progress',               actions: ['complete', 'extend'] },
+        COMPLETED:           { bg: 'bg-green-100',  text: 'text-green-700',  border: 'border-green-200',  icon: <CheckCircle className="w-4 h-4" />,   label: 'Completed',                 actions: [] },
+        REJECTED:            { bg: 'bg-rose-100',   text: 'text-rose-700',   border: 'border-rose-200',   icon: <XCircle className="w-4 h-4" />,      label: 'Rejected',                  actions: [] },
+        CANCELLED:           { bg: 'bg-gray-100',   text: 'text-gray-600',   border: 'border-gray-200',   icon: <Ban className="w-4 h-4" />,          label: 'Cancelled',                 actions: [] },
+        EXTENSION_REQUESTED: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', icon: <RefreshCw className="w-4 h-4" />,     label: 'Extension Pending',         actions: [] },
+    }[status] || { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', icon: <Clock className="w-4 h-4" />, label: status, actions: [] });
+
+    const getPriorityConfig = (priority) => ({
+        CRITICAL: { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Critical' },
+        HIGH:     { bg: 'bg-orange-100', text: 'text-orange-700', label: 'High' },
+        MEDIUM:   { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Medium' },
+        LOW:      { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Low' },
+    }[priority] || { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Medium' });
+
+    // ─── Stats ───────────────────────────────────────────────────────────
+    const stats = {
+        total:      requests.length,
+        pending:    requests.filter(r => r.maintenanceStatus === 'PENDING').length,
+        approved:   requests.filter(r => r.maintenanceStatus === 'APPROVED').length,
+        inProgress: requests.filter(r => r.maintenanceStatus === 'IN_PROGRESS').length,
+        extension:  requests.filter(r => r.maintenanceStatus === 'EXTENSION_REQUESTED').length,
+        completed:  requests.filter(r => r.maintenanceStatus === 'COMPLETED').length,
+        cancelled:  requests.filter(r => ['CANCELLED', 'REJECTED'].includes(r.maintenanceStatus)).length,
+    };
+
+    // ─── Filters ─────────────────────────────────────────────────────────
+    const FILTERS = [
+        { key: 'ALL',                label: 'All',               active: 'bg-primary text-white',     inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200',      count: null },
+        { key: 'PENDING',            label: 'Pending',           active: 'bg-amber-500 text-white',   inactive: 'bg-amber-50 text-amber-600 hover:bg-amber-100',    count: stats.pending },
+        { key: 'APPROVED',           label: 'Approved',          active: 'bg-emerald-500 text-white', inactive: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100', count: stats.approved },
+        { key: 'IN_PROGRESS',        label: 'In Progress',       active: 'bg-blue-500 text-white',    inactive: 'bg-blue-50 text-blue-600 hover:bg-blue-100',       count: stats.inProgress },
+        { key: 'EXTENSION_REQUESTED',label: 'Extension Pending', active: 'bg-purple-500 text-white',  inactive: 'bg-purple-50 text-purple-600 hover:bg-purple-100', count: stats.extension },
+        { key: 'COMPLETED',          label: 'Completed',         active: 'bg-green-500 text-white',   inactive: 'bg-green-50 text-green-600 hover:bg-green-100',    count: stats.completed },
+        { key: 'CANCELLED',          label: 'Cancelled',         active: 'bg-gray-500 text-white',    inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200',      count: stats.cancelled },
+    ];
+
+    const filteredRequests = requests.filter(request => {
+        if (filterStatus === 'ALL') return true;
+        const s = request.maintenanceStatus;
+        if (filterStatus === 'CANCELLED') return s === 'CANCELLED' || s === 'REJECTED';
+        return s === filterStatus;
+    });
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+            <div className="max-w-7xl mx-auto p-6 space-y-6">
+
+                {/* ── Header + Stats + Filters ── */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-white to-primary/5">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                <Wrench className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-bold text-text-primary">Maintenance Dashboard</h1>
+                                <p className="text-sm text-text-secondary mt-0.5">Track and manage your maintenance requests</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Stats row — 7 cards */}
+                    {requests.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 p-6 bg-gray-50/30">
+                            <div className="bg-white rounded-xl p-3 text-center border border-gray-100">
+                                <p className="text-2xl font-bold text-text-primary">{stats.total}</p>
+                                <p className="text-xs text-text-secondary">Total</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 text-center border border-amber-100">
+                                <p className="text-2xl font-bold text-amber-600">{stats.pending}</p>
+                                <p className="text-xs text-amber-600">Pending</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 text-center border border-emerald-100">
+                                <p className="text-2xl font-bold text-emerald-600">{stats.approved}</p>
+                                <p className="text-xs text-emerald-600">Approved</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 text-center border border-blue-100">
+                                <p className="text-2xl font-bold text-blue-600">{stats.inProgress}</p>
+                                <p className="text-xs text-blue-600">In Progress</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 text-center border border-purple-100">
+                                <p className="text-2xl font-bold text-purple-600">{stats.extension}</p>
+                                <p className="text-xs text-purple-600">Ext. Pending</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 text-center border border-green-100">
+                                <p className="text-2xl font-bold text-green-600">{stats.completed}</p>
+                                <p className="text-xs text-green-600">Completed</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 text-center border border-gray-200">
+                                <p className="text-2xl font-bold text-gray-600">{stats.cancelled}</p>
+                                <p className="text-xs text-gray-600">Cancelled</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Filter tabs */}
+                    <div className="px-6 pt-4 pb-4 border-b border-gray-100">
+                        <div className="flex flex-wrap gap-2">
+                            {FILTERS.map(f => (
+                                <button
+                                    key={f.key}
+                                    onClick={() => setFilterStatus(f.key)}
+                                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${filterStatus === f.key ? f.active : f.inactive}`}
+                                >
+                                    {f.label}
+                                    {/* Show count badge on inactive filters when count > 0 */}
+                                    {f.count != null && f.count > 0 && filterStatus !== f.key && (
+                                        <span className="inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-full bg-white/70 text-current">
+                                            {f.count}
+                                        </span>
+                                    )}
+                                    {/* Pulse dot for extension pending — needs attention */}
+                                    {f.key === 'EXTENSION_REQUESTED' && stats.extension > 0 && filterStatus !== f.key && (
+                                        <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── Request list ── */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    {loading ? (
+                        <div className="flex justify-center py-16">
+                            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                        </div>
+                    ) : filteredRequests.length === 0 ? (
+                        <div className="text-center py-16">
+                            <Wrench className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                            <p className="text-text-secondary font-medium">No maintenance requests found</p>
+                            <p className="text-text-secondary text-sm mt-1">
+                                {filterStatus !== 'ALL' ? 'Try selecting a different filter above.' : 'Submit a maintenance request from the resource catalogue.'}
+                            </p>
+                            {filterStatus !== 'ALL' && (
+                                <button onClick={() => setFilterStatus('ALL')} className="mt-3 text-sm text-primary hover:underline">
+                                    View all
+                                </button>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-gray-100">
+                            {filteredRequests.map((request) => {
+                                const displayStatus  = request.maintenanceStatus || request.status;
+                                const statusConfig   = getStatusConfig(displayStatus);
+                                const priorityConfig = getPriorityConfig(request.priority);
+                                const isApproved     = displayStatus === 'APPROVED';
+                                const isExtension    = displayStatus === 'EXTENSION_REQUESTED';
+                                const timeStatus     = isApproved ? getTimeStatusBadge(request) : null;
+                                const startStatus    = isApproved ? getStartButtonStatus(request) : null;
+
+                                // For APPROVED: only show cancel if window hasn't closed
+                                const showCancel = statusConfig.actions.includes('cancel') && (() => {
+                                    if (displayStatus === 'APPROVED') {
+                                        return startStatus && (startStatus.canStart || startStatus.variant === 'info' || startStatus.variant === 'warning');
+                                    }
+                                    return true; // PENDING always shows cancel
+                                })();
+
+                                return (
+                                    <div key={request.id} className={`p-6 hover:bg-gray-50/30 transition-colors ${isExtension ? 'border-l-4 border-l-purple-400' : ''}`}>
+                                        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+
+                                            {/* Left: details */}
+                                            <div className="flex-1 min-w-0">
+
+                                                {/* Title row */}
+                                                <div className="flex items-center gap-3 flex-wrap mb-2">
+                                                    <h3 className="text-lg font-bold text-text-primary">{request.resourceName}</h3>
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${priorityConfig.bg} ${priorityConfig.text}`}>
+                                                        {priorityConfig.label}
+                                                    </span>
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${statusConfig.bg} ${statusConfig.text} border ${statusConfig.border}`}>
+                                                        {statusConfig.icon}<span>{statusConfig.label}</span>
+                                                    </span>
+                                                    {isApproved && timeStatus && (
+                                                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${timeStatus.className}`}>
+                                                            {timeStatus.text}
+                                                        </span>
+                                                    )}
+                                                    {/* Extension pending — action required badge */}
+                                                    {isExtension && (
+                                                        <span className="px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 animate-pulse">
+                                                            ⏳ Awaiting Admin Decision
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <p className="text-sm text-text-primary mb-3">
+                                                    {request.issueDescription || 'No description provided'}
+                                                </p>
+
+                                                {/* Date + time */}
+                                                <div className="flex flex-wrap gap-4 text-sm text-text-secondary">
+                                                    <div className="flex items-center gap-2">
+                                                        <Calendar className="w-4 h-4" />
+                                                        <span>{format(buildScheduledStart(request.bookingDate, request.startTime), 'EEEE, MMM d, yyyy')}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Clock className="w-4 h-4" />
+                                                        <span>{request.startTime} – {request.endTime}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Extension info banner */}
+                                                {isExtension && (
+                                                    <div className="mt-3 p-3 bg-purple-50 rounded-xl border border-purple-200">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <RefreshCw className="w-4 h-4 text-purple-600" />
+                                                            <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">Extension Request Submitted</p>
+                                                        </div>
+                                                        <p className="text-sm text-purple-800">
+                                                            You requested <strong>{request.extensionRequested} additional day{request.extensionRequested !== 1 ? 's' : ''}</strong>.
+                                                            {request.extensionReason && <span> Reason: {request.extensionReason}</span>}
+                                                        </p>
+                                                        <p className="text-xs text-purple-600 mt-1">
+                                                            Waiting for admin to approve or reject your extension request.
+                                                            Once decided, you will be notified and can mark maintenance as completed.
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                {/* Time window banners for APPROVED */}
+                                                {isApproved && startStatus && !startStatus.canStart && (
+                                                    <div className={`mt-3 p-3 rounded-lg flex items-start gap-2 ${
+                                                        startStatus.variant === 'info'    ? 'bg-blue-50 border border-blue-100' :
+                                                            startStatus.variant === 'warning' ? 'bg-yellow-50 border border-yellow-100' :
+                                                                'bg-red-50 border border-red-100'
+                                                    }`}>
+                                                        <Info className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
+                                                            startStatus.variant === 'info'    ? 'text-blue-500' :
+                                                                startStatus.variant === 'warning' ? 'text-yellow-500' :
+                                                                    'text-red-500'
+                                                        }`} />
+                                                        <p className={`text-xs ${
+                                                            startStatus.variant === 'info'    ? 'text-blue-700' :
+                                                                startStatus.variant === 'warning' ? 'text-yellow-700' :
+                                                                    'text-red-700'
+                                                        }`}>{startStatus.message}</p>
+                                                    </div>
+                                                )}
+
+                                                {isApproved && startStatus?.canStart && (
+                                                    <div className="mt-3 p-3 rounded-lg flex items-start gap-2 bg-green-50 border border-green-100">
+                                                        <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-green-500" />
+                                                        <p className="text-xs text-green-700">{startStatus.message}</p>
+                                                    </div>
+                                                )}
+
+                                                {/* Admin reason */}
+                                                {(displayStatus === 'CANCELLED' || displayStatus === 'REJECTED') && request.adminReason && (
+                                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                                        <p className="text-xs font-semibold text-text-secondary">Reason:</p>
+                                                        <p className="text-sm text-text-primary mt-1">{request.adminReason}</p>
+                                                    </div>
+                                                )}
+
+                                                {/* Timestamps */}
+                                                {request.maintenanceStartedAt && (
+                                                    <p className="text-xs text-text-secondary mt-2">
+                                                        Started: {format(new Date(request.maintenanceStartedAt), 'MMM d, h:mm a')}
+                                                    </p>
+                                                )}
+                                                {request.maintenanceCompletedAt && (
+                                                    <p className="text-xs text-text-secondary mt-1">
+                                                        Completed: {format(new Date(request.maintenanceCompletedAt), 'MMM d, h:mm a')}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            {/* Right: action buttons */}
+                                            <div className="flex flex-row lg:flex-col gap-2 flex-shrink-0">
+
+                                                {/* Start */}
+                                                {statusConfig.actions.includes('start') && (
+                                                    <button
+                                                        onClick={() => handleStartMaintenance(request)}
+                                                        disabled={!startStatus?.canStart || processing}
+                                                        title={startStatus?.message}
+                                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${
+                                                            startStatus?.canStart
+                                                                ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                        }`}
+                                                    >
+                                                        <Play className="w-4 h-4" /> Start Maintenance
+                                                    </button>
+                                                )}
+
+                                                {/* Complete — only for IN_PROGRESS */}
+                                                {statusConfig.actions.includes('complete') && (
+                                                    <button
+                                                        onClick={() => handleCompleteMaintenance(request)}
+                                                        disabled={processing}
+                                                        className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-xl text-sm font-semibold hover:bg-green-100 transition"
+                                                    >
+                                                        <Check className="w-4 h-4" /> Mark Completed
+                                                    </button>
+                                                )}
+
+                                                {/* Extend — only for IN_PROGRESS */}
+                                                {statusConfig.actions.includes('extend') && (
+                                                    <button
+                                                        onClick={() => { setSelectedRequest(request); setShowExtensionModal(true); }}
+                                                        className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-sm font-semibold hover:bg-amber-100 transition"
+                                                    >
+                                                        <RefreshCw className="w-4 h-4" /> Request Extension
+                                                    </button>
+                                                )}
+
+                                                {/* Cancel — gated for APPROVED (window must still be open) */}
+                                                {showCancel && (
+                                                    <button
+                                                        onClick={() => openCancelConfirm(request)}
+                                                        disabled={processing}
+                                                        className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-sm font-semibold hover:bg-rose-100 border border-rose-200 transition"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                        {displayStatus === 'PENDING' ? 'Cancel Request' : 'Cancel Booking'}
+                                                    </button>
+                                                )}
+
+                                                {/* Static badges */}
+                                                {displayStatus === 'COMPLETED' && (
+                                                    <div className="px-4 py-2 bg-green-50 rounded-xl text-sm font-medium text-green-600 flex items-center gap-2">
+                                                        <CheckCircle className="w-4 h-4" /> Completed
+                                                    </div>
+                                                )}
+                                                {displayStatus === 'CANCELLED' && (
+                                                    <div className="px-4 py-2 bg-gray-100 rounded-xl text-sm font-medium text-gray-600 flex items-center gap-2">
+                                                        <Ban className="w-4 h-4" /> Cancelled
+                                                    </div>
+                                                )}
+                                                {displayStatus === 'EXTENSION_REQUESTED' && (
+                                                    <div className="px-4 py-2 bg-purple-50 rounded-xl text-sm font-medium text-purple-600 flex items-center gap-2 border border-purple-200">
+                                                        <RefreshCw className="w-4 h-4" /> Extension Pending
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* ══ Cancel confirmation modal ══ */}
+            {showCancelConfirm && requestToCancel && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className={`p-6 border-b border-gray-100 ${
+                            requestToCancel.maintenanceStatus === 'APPROVED'
+                                ? 'bg-gradient-to-r from-amber-50 to-white'
+                                : 'bg-gradient-to-r from-rose-50 to-white'
+                        }`}>
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                    requestToCancel.maintenanceStatus === 'APPROVED' ? 'bg-amber-100' : 'bg-rose-100'
+                                }`}>
+                                    <AlertCircle className={`w-5 h-5 ${
+                                        requestToCancel.maintenanceStatus === 'APPROVED' ? 'text-amber-600' : 'text-rose-600'
+                                    }`} />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-text-primary">
+                                        Cancel {requestToCancel.maintenanceStatus === 'APPROVED' ? 'Approved Maintenance' : 'Maintenance Request'}
+                                    </h3>
+                                    <p className="text-sm text-text-secondary mt-0.5">{requestToCancel.resourceName}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            {requestToCancel.maintenanceStatus === 'APPROVED' ? (
+                                <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-2">
+                                    <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                                    <p className="text-sm text-amber-700">
+                                        This maintenance request has already been approved. Cancelling it will free up the time slot and notify the admin. This action cannot be undone.
+                                    </p>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-text-secondary">
+                                    Are you sure you want to cancel this pending maintenance request? The time slot will become available again.
+                                </p>
+                            )}
+                            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-1">
+                                <p className="text-sm font-semibold text-text-primary">{requestToCancel.resourceName}</p>
+                                <p className="text-xs text-text-secondary">
+                                    {format(buildScheduledStart(requestToCancel.bookingDate, requestToCancel.startTime), 'EEEE, MMM d, yyyy')} &bull; {requestToCancel.startTime} – {requestToCancel.endTime}
+                                </p>
+                                {requestToCancel.issueDescription && (
+                                    <p className="text-xs text-text-secondary italic">"{requestToCancel.issueDescription}"</p>
+                                )}
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-gray-100 flex gap-3">
+                            <button
+                                onClick={() => { setShowCancelConfirm(false); setRequestToCancel(null); }}
+                                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
+                            >
+                                Keep {requestToCancel.maintenanceStatus === 'PENDING' ? 'Request' : 'Booking'}
+                            </button>
+                            <button
+                                onClick={handleCancelRequest}
+                                disabled={processing}
+                                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition disabled:opacity-50 ${
+                                    requestToCancel.maintenanceStatus === 'APPROVED'
+                                        ? 'bg-amber-600 hover:bg-amber-700'
+                                        : 'bg-rose-600 hover:bg-rose-700'
+                                }`}
+                            >
+                                {processing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Yes, Cancel'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ══ Extension modal ══ */}
+            {showExtensionModal && selectedRequest && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-amber-50 to-white">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                                    <RefreshCw className="w-5 h-5 text-amber-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-text-primary">Request Extension</h3>
+                                    <p className="text-sm text-text-secondary">{selectedRequest.resourceName}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-sm text-text-primary">
+                                    Current maintenance period:{' '}
+                                    {format(buildScheduledStart(selectedRequest.bookingDate, selectedRequest.startTime), 'MMM d, yyyy')}
+                                    {' '}&bull;{' '}
+                                    {selectedRequest.startTime} – {selectedRequest.endTime}
+                                </p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-text-primary mb-2">
+                                    Additional Days Needed <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    value={extensionDays}
+                                    onChange={(e) => setExtensionDays(e.target.value)}
+                                    min="1"
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                    placeholder="Enter number of days"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-text-primary mb-2">
+                                    Reason for Extension
+                                </label>
+                                <textarea
+                                    value={extensionReason}
+                                    onChange={(e) => setExtensionReason(e.target.value)}
+                                    rows="3"
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                    placeholder="Explain why you need more time..."
+                                />
+                            </div>
+                            <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                                <p className="text-xs text-blue-700">
+                                    ℹ️ Your extension request will be sent to the admin for approval.
+                                    You will be notified once a decision is made.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-gray-100 flex gap-3">
+                            <button
+                                onClick={() => { setShowExtensionModal(false); setSelectedRequest(null); setExtensionDays(''); setExtensionReason(''); }}
+                                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleRequestExtension}
+                                disabled={processing || !extensionDays}
+                                className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition disabled:opacity-50"
+                            >
+                                {processing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit Request'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default MaintenanceRequests;

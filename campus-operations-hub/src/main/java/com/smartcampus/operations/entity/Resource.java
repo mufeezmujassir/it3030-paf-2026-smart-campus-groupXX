@@ -1,10 +1,11 @@
+// src/main/java/com/smartcampus/operations/entity/Resource.java
 package com.smartcampus.operations.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-
 import java.util.UUID;
 
 @Entity
@@ -39,8 +40,6 @@ public class Resource {
     @Column(nullable = false, length = 50)
     private ResourceStatus status;
 
-
-
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -50,6 +49,19 @@ public class Resource {
     @Column(name = "image_id")
     private UUID imageId;
 
+    // Maintenance fields
+    @Column(name = "maintenance_mode")
+    @Builder.Default
+    private Boolean maintenanceMode = false;
+
+    @Column(name = "maintenance_start_date")
+    private LocalDate maintenanceStartDate;
+
+    @Column(name = "maintenance_end_date")
+    private LocalDate maintenanceEndDate;
+
+    @Column(name = "maintenance_reason", length = 500)
+    private String maintenanceReason;
 
     @PrePersist
     protected void onCreate() {

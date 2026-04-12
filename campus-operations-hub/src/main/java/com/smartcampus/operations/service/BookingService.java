@@ -17,7 +17,8 @@ public interface BookingService {
 
     BookingResponse cancelBooking(UUID bookingId, String userEmail);
 
-    Page<BookingResponse> getUserBookings(String userEmail, String status, Pageable pageable);
+    // Updated method signature with 3 parameters
+    Page<BookingResponse> getUserBookings(String userEmail, String status, String bookingType, Pageable pageable);
 
     Page<BookingResponse> getAllBookings(UUID resourceId, String status, LocalDate bookingDate, Pageable pageable);
 

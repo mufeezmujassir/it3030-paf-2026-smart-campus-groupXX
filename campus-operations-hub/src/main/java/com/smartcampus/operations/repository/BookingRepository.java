@@ -45,6 +45,26 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // Get user's bookings filtered by status
     Page<Booking> findByUserIdAndStatusOrderByBookingDateDescStartTimeDesc(UUID userId, BookingStatus status, Pageable pageable);
 
+    // Get user's bookings filtered by status and booking type
+    @Query("SELECT b FROM Booking b WHERE b.userId = :userId " +
+            "AND (:status IS NULL OR b.status = :status) " +
+            "AND (:bookingType IS NULL OR b.bookingType = :bookingType) " +
+            "ORDER BY b.bookingDate DESC, b.startTime DESC")
+    Page<Booking> findByUserIdAndStatusAndBookingTypeOrderByBookingDateDescStartTimeDesc(
+            @Param("userId") UUID userId,
+            @Param("status") BookingStatus status,
+            @Param("bookingType") String bookingType,
+            Pageable pageable);
+
+    // Get user's bookings filtered by booking type only
+    @Query("SELECT b FROM Booking b WHERE b.userId = :userId " +
+            "AND (:bookingType IS NULL OR b.bookingType = :bookingType) " +
+            "ORDER BY b.bookingDate DESC, b.startTime DESC")
+    Page<Booking> findByUserIdAndBookingTypeOrderByBookingDateDescStartTimeDesc(
+            @Param("userId") UUID userId,
+            @Param("bookingType") String bookingType,
+            Pageable pageable);
+
     // Check if user has a specific booking
     @Query("SELECT b FROM Booking b WHERE b.userId = :userId " +
             "AND b.resourceId = :resourceId " +
@@ -122,6 +142,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime);
 
+    List<Booking> findByStatusAndBookingType(BookingStatus status, String bookingType);
     // Dashboard count methods
     long countByStatus(BookingStatus status);
 

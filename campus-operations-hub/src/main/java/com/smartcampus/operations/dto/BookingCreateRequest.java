@@ -32,4 +32,9 @@ public class BookingCreateRequest {
     private String purpose;
 
     private Integer expectedAttendees;
+
+    // Maintenance fields (for technicians)
+    private String bookingType; // REGULAR or MAINTENANCE
+    private String issueDescription;
+    private String priority; // LOW, MEDIUM, HIGH, CRITICAL
 }

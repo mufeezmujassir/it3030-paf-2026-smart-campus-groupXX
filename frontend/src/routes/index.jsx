@@ -18,6 +18,8 @@ import CreateTicket from '../pages/tickets/CreateTicket';
 import TicketDetail from '../pages/tickets/TicketDetail';
 import TechnicianDashboard from '../pages/technician/TechnicianDashboard';
 import AdminBookingManagement from '../pages/admin/AdminBookingManagement';
+import MyBookings from '../pages/MyBookings';  // Add this import
+import MaintenanceRequests from '../pages/technician/MaintenanceRequests';
 import MyBookings from '../pages/MyBookings';
 import StudentDashboard from '../pages/student/StudentDashboard';
 import StaffDashboard from '../pages/staff/StaffDashboard';
@@ -91,7 +93,13 @@ const AppRoutes = () => {
                     <RoleBasedRoute allowedRoles={['TECHNICIAN']}>
                         <TechnicianDashboard />
                     </RoleBasedRoute>
-                } />
+                }>
+                    <Route index element={<div className="p-8">Technician Dashboard</div>} />
+                    <Route path="my-bookings" element={<MyBookings />} />
+                    <Route path="maintenance" element={<MaintenanceRequests />} />
+                    <Route path="safety" element={<div className="p-8">Safety Logs</div>} />
+                    <Route path="environment" element={<div className="p-8">Environment</div>} />
+                </Route>
             </Route>
 
             <Route path="/" element={<Navigate to="/login" replace />} />

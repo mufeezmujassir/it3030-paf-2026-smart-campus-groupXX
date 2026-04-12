@@ -38,6 +38,8 @@ public class BookingServiceImpl implements BookingService {
     private static final LocalTime END_TIME = LocalTime.of(17, 0);
     private static final int SLOT_DURATION_HOURS = 1;
 
+    // In BookingServiceImpl.java, update the createBooking method to handle maintenance requests
+
     @Override
     @Transactional
     public BookingResponse createBooking(BookingCreateRequest request, String userEmail) {
@@ -54,6 +56,20 @@ public class BookingServiceImpl implements BookingService {
             throw new InvalidBookingException("Resource is currently unavailable for booking");
         }
 
+        // Check if resource is in maintenance mode
+        if (resource.getMaintenanceMode() != null && resource.getMaintenanceMode()) {
+            LocalDate bookingDate = request.getBookingDate();
+            LocalDate maintenanceStart = resource.getMaintenanceStartDate();
+            LocalDate maintenanceEnd = resource.getMaintenanceEndDate();
+
+            if (maintenanceStart != null && maintenanceEnd != null &&
+                    !bookingDate.isBefore(maintenanceStart) && !bookingDate.isAfter(maintenanceEnd)) {
+                throw new InvalidBookingException(
+                        String.format("This resource is under maintenance from %s to %s. Bookings are not allowed during this period.",
+                                maintenanceStart, maintenanceEnd));
+            }
+        }
+
         // Validate booking time
         validateBookingTime(request.getStartTime(), request.getEndTime());
 
@@ -61,7 +77,6 @@ public class BookingServiceImpl implements BookingService {
         validateBookingDateTime(request.getBookingDate(), request.getStartTime());
 
         // Check for conflicts - ONLY with APPROVED bookings
-        // Pending bookings do NOT block new bookings from other users
         List<Booking> overlappingApproved = bookingRepository.findOverlappingApprovedBookings(
                 request.getResourceId(), request.getBookingDate(),
                 request.getStartTime(), request.getEndTime());
@@ -89,10 +104,7 @@ public class BookingServiceImpl implements BookingService {
             throw new InvalidBookingException("You already have an approved booking for this time slot");
         }
 
-        // DIFFERENT USERS CAN BOOK THE SAME PENDING SLOT
-        // No check for other users' pending bookings - this allows multiple users to request the same slot
-
-        // Create booking
+        // Create booking with maintenance fields
         Booking booking = Booking.builder()
                 .resourceId(request.getResourceId())
                 .userId(user.getId())
@@ -102,24 +114,16 @@ public class BookingServiceImpl implements BookingService {
                 .purpose(request.getPurpose())
                 .expectedAttendees(request.getExpectedAttendees())
                 .status(BookingStatus.PENDING)
+                .bookingType(request.getBookingType() != null ? request.getBookingType() : "REGULAR")
+                .issueDescription(request.getIssueDescription())
+                .priority(request.getPriority())
                 .build();
 
-        // Try to save - if there's a duplicate key error, catch it and handle gracefully
-        Booking saved;
-        try {
-            saved = bookingRepository.save(booking);
-        } catch (Exception e) {
-            log.error("Failed to save booking: {}", e.getMessage());
-            if (e.getMessage().contains("duplicate key") || e.getMessage().contains("unique")) {
-                throw new InvalidBookingException("This time slot is already booked. Please choose a different time.");
-            }
-            throw new InvalidBookingException("Failed to create booking: " + e.getMessage());
-        }
-
+        Booking saved = bookingRepository.save(booking);
         log.info("Booking created: {} for resource {} by user {}",
                 saved.getId(), resource.getName(), user.getEmail());
 
-        // Get count of pending bookings for this slot (including this new one)
+        // Get count of pending bookings for this slot
         long pendingCount = bookingRepository.countPendingBookingsForSlot(
                 request.getResourceId(),
                 request.getBookingDate(),
@@ -130,14 +134,35 @@ public class BookingServiceImpl implements BookingService {
                 pendingCount, request.getStartTime(), request.getBookingDate());
 
         // Send notification to user
+        String notificationType = "MAINTENANCE_REQUEST".equals(request.getBookingType()) ?
+                "MAINTENANCE_REQUEST_SUBMITTED" : "BOOKING_CREATED";
+
         notificationService.sendNotification(
                 user.getId(),
-                "Booking Request Submitted",
-                String.format("Your booking request for %s on %s at %s-%s has been submitted and is pending approval. There are currently %d pending request(s) for this slot.",
+                "MAINTENANCE_REQUEST".equals(request.getBookingType()) ?
+                        "Maintenance Request Submitted" : "Booking Request Submitted",
+                String.format("Your %s for %s on %s at %s-%s has been submitted and is pending approval.",
+                        "MAINTENANCE_REQUEST".equals(request.getBookingType()) ? "maintenance request" : "booking request",
                         resource.getName(), request.getBookingDate(),
-                        request.getStartTime(), request.getEndTime(), pendingCount),
-                "BOOKING_CREATED"
+                        request.getStartTime(), request.getEndTime()),
+                notificationType
         );
+
+        // If maintenance request, also notify admins
+        if ("MAINTENANCE".equals(request.getBookingType())) {
+            List<User> admins = userRepository.findByRole(Role.ADMIN);
+            for (User admin : admins) {
+                notificationService.sendNotification(
+                        admin.getId(),
+                        "🔧 New Maintenance Request",
+                        String.format("Technician %s has submitted a maintenance request for %s on %s at %s-%s. Priority: %s\nIssue: %s",
+                                user.getFullName(), resource.getName(), request.getBookingDate(),
+                                request.getStartTime(), request.getEndTime(),
+                                request.getPriority(), request.getIssueDescription()),
+                        "MAINTENANCE_REQUEST"
+                );
+            }
+        }
 
         return mapToResponse(saved, resource, user);
     }
@@ -266,7 +291,21 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findByIdAndUserId(bookingId, user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found or not owned by user"));
 
-        // Users can cancel PENDING or APPROVED bookings
+        // ── Guard: cannot cancel a booking whose time slot has already passed ──
+        LocalDate today = LocalDate.now();
+        LocalTime now   = LocalTime.now();
+
+        boolean slotHasPassed =
+                booking.getBookingDate().isBefore(today) ||
+                        (booking.getBookingDate().isEqual(today) && booking.getEndTime().isBefore(now));
+
+        if (slotHasPassed) {
+            throw new InvalidBookingException(
+                    String.format("Cannot cancel a booking whose time slot has already passed (%s %s–%s).",
+                            booking.getBookingDate(), booking.getStartTime(), booking.getEndTime()));
+        }
+
+        // ── Cancel PENDING bookings ──
         if (booking.getStatus() == BookingStatus.PENDING) {
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setAdminReason("Cancelled by user");
@@ -280,7 +319,7 @@ public class BookingServiceImpl implements BookingService {
             notificationService.sendNotification(
                     user.getId(),
                     "Booking Cancelled",
-                    String.format("Your pending booking request for %s on %s at %s-%s has been cancelled.",
+                    String.format("Your pending booking request for %s on %s at %s–%s has been cancelled.",
                             resource.getName(), booking.getBookingDate(),
                             booking.getStartTime(), booking.getEndTime()),
                     "BOOKING_CANCELLED"
@@ -288,7 +327,9 @@ public class BookingServiceImpl implements BookingService {
 
             return mapToResponse(updated, resource, user);
         }
-        else if (booking.getStatus() == BookingStatus.APPROVED) {
+
+        // ── Cancel APPROVED bookings (only if slot hasn't passed — already guarded above) ──
+        if (booking.getStatus() == BookingStatus.APPROVED) {
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setAdminReason("Cancelled by user");
             Booking updated = bookingRepository.save(booking);
@@ -301,7 +342,7 @@ public class BookingServiceImpl implements BookingService {
             notificationService.sendNotification(
                     user.getId(),
                     "Booking Cancelled",
-                    String.format("Your approved booking for %s on %s at %s-%s has been cancelled.",
+                    String.format("Your approved booking for %s on %s at %s–%s has been cancelled.",
                             resource.getName(), booking.getBookingDate(),
                             booking.getStartTime(), booking.getEndTime()),
                     "BOOKING_CANCELLED"
@@ -309,18 +350,17 @@ public class BookingServiceImpl implements BookingService {
 
             return mapToResponse(updated, resource, user);
         }
-        else {
-            throw new InvalidBookingException("Only pending or approved bookings can be cancelled");
-        }
+
+        throw new InvalidBookingException("Only pending or approved bookings can be cancelled");
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<BookingResponse> getUserBookings(String userEmail, String status, Pageable pageable) {
+    public Page<BookingResponse> getUserBookings(String userEmail, String status, String bookingType, Pageable pageable) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        log.info("Fetching user bookings for email: {}, status: {}, pageable: {}", userEmail, status, pageable);
+        log.info("Fetching user bookings for email: {}, status: {}, bookingType: {}, pageable: {}", userEmail, status, bookingType, pageable);
 
         // Convert status to enum
         BookingStatus bookingStatus = null;
@@ -333,11 +373,22 @@ public class BookingServiceImpl implements BookingService {
         }
 
         Page<Booking> bookingPage;
-        if (bookingStatus != null) {
-            // Filter by status
+
+        if (bookingStatus != null && bookingType != null && !bookingType.trim().isEmpty()) {
+            // Filter by both status and booking type
+            bookingPage = bookingRepository.findByUserIdAndStatusAndBookingTypeOrderByBookingDateDescStartTimeDesc(
+                    user.getId(), bookingStatus, bookingType, pageable);
+            log.info("Filtering by status: {} and bookingType: {}", bookingStatus, bookingType);
+        } else if (bookingStatus != null) {
+            // Filter by status only
             bookingPage = bookingRepository.findByUserIdAndStatusOrderByBookingDateDescStartTimeDesc(
                     user.getId(), bookingStatus, pageable);
             log.info("Filtering by status: {}", bookingStatus);
+        } else if (bookingType != null && !bookingType.trim().isEmpty()) {
+            // Filter by booking type only
+            bookingPage = bookingRepository.findByUserIdAndBookingTypeOrderByBookingDateDescStartTimeDesc(
+                    user.getId(), bookingType, pageable);
+            log.info("Filtering by bookingType: {}", bookingType);
         } else {
             // No status filter - get all bookings
             bookingPage = bookingRepository.findByUserIdOrderByBookingDateDescStartTimeDesc(user.getId(), pageable);
@@ -430,6 +481,33 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public AvailableTimeSlotsResponse getAvailableTimeSlots(UUID resourceId, LocalDate date) {
+        Resource resource = resourceRepository.findById(resourceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
+
+        // Check if resource is in maintenance mode for this date
+        boolean isUnderMaintenance = false;
+        String maintenanceReason = null;
+        LocalDate maintenanceEndDate = null;
+
+        if (resource.getMaintenanceMode() != null && resource.getMaintenanceMode() &&
+                resource.getMaintenanceStartDate() != null && resource.getMaintenanceEndDate() != null) {
+            isUnderMaintenance = !date.isBefore(resource.getMaintenanceStartDate()) &&
+                    !date.isAfter(resource.getMaintenanceEndDate());
+            maintenanceReason = resource.getMaintenanceReason();
+            maintenanceEndDate = resource.getMaintenanceEndDate();
+        }
+
+        if (isUnderMaintenance) {
+            // Return empty slots with maintenance info
+            return AvailableTimeSlotsResponse.builder()
+                    .availableSlots(new ArrayList<>())
+                    .bookedSlots(new ArrayList<>())
+                    .isUnderMaintenance(true)
+                    .maintenanceReason(maintenanceReason)
+                    .maintenanceEndDate(maintenanceEndDate)
+                    .build();
+        }
+
         // Get all bookings for this resource on this date
         List<Booking> bookings = bookingRepository.findBookingsByResourceAndDate(resourceId, date);
 
@@ -486,7 +564,6 @@ public class BookingServiceImpl implements BookingService {
                         .status(BookingStatus.APPROVED)
                         .build());
             } else if (hasPending) {
-                // Show pending status with count
                 bookedSlots.add(AvailableTimeSlotsResponse.BookedSlot.builder()
                         .startTime(finalCurrent)
                         .endTime(finalSlotEnd)
@@ -500,6 +577,7 @@ public class BookingServiceImpl implements BookingService {
         return AvailableTimeSlotsResponse.builder()
                 .availableSlots(allSlots)
                 .bookedSlots(bookedSlots)
+                .isUnderMaintenance(false)
                 .build();
     }
 
@@ -603,6 +681,8 @@ public class BookingServiceImpl implements BookingService {
         }
     }
 
+    // Update the mapToResponse method to include maintenance fields and user role
+
     private BookingResponse mapToResponse(Booking booking, Resource resource, User user) {
         return BookingResponse.builder()
                 .id(booking.getId())
@@ -611,6 +691,7 @@ public class BookingServiceImpl implements BookingService {
                 .userId(booking.getUserId())
                 .userFullName(user != null ? user.getFullName() : null)
                 .userEmail(user != null ? user.getEmail() : null)
+                .userRole(user != null ? user.getRole().name() : null)
                 .bookingDate(booking.getBookingDate())
                 .startTime(booking.getStartTime())
                 .endTime(booking.getEndTime())
@@ -620,6 +701,9 @@ public class BookingServiceImpl implements BookingService {
                 .adminReason(booking.getAdminReason())
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
+                .bookingType(booking.getBookingType())
+                .issueDescription(booking.getIssueDescription())
+                .priority(booking.getPriority())
                 .build();
     }
 }
