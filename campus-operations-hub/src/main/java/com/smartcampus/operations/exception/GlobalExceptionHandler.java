@@ -60,4 +60,24 @@ public class GlobalExceptionHandler {
                 .build();
         return new ResponseEntity<>(error, status);
     }
+
+    @ExceptionHandler(TicketNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleTicketNotFound(TicketNotFoundException ex) {
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(AttachmentLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleAttachmentLimit(AttachmentLimitExceededException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(UnauthorizedTicketAccessException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthorizedTicketAccess(UnauthorizedTicketAccessException ex) {
+        return buildResponse(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidStatusTransitionException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidStatusTransition(InvalidStatusTransitionException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
 }

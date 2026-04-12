@@ -62,7 +62,8 @@ public class ResourceController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ResourceResponse> create(@RequestPart("data") String data,
-                                                   @RequestPart(value = "file", required = false) MultipartFile file) throws IOException {
+                                                   @RequestPart(value = "file", required = false) MultipartFile file,
+                                                   @org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.core.userdetails.UserDetails userDetails) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         ResourceCreateRequest req = mapper.readValue(data, ResourceCreateRequest.class);
@@ -75,7 +76,7 @@ public class ResourceController {
             com.smartcampus.operations.entity.ResourceImage saved = imageRepository.save(img);
             req.setImageId(saved.getId());
         }
-        ResourceResponse resp = resourceService.createResource(req);
+        ResourceResponse resp = resourceService.createResource(req, userDetails.getUsername());
         return new ResponseEntity<>(resp, HttpStatus.CREATED);
     }
 
@@ -83,7 +84,8 @@ public class ResourceController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ResourceResponse> update(@PathVariable java.util.UUID id,
                                                    @RequestPart("data") String data,
-                                                   @RequestPart(value = "file", required = false) MultipartFile file) throws IOException {
+                                                   @RequestPart(value = "file", required = false) MultipartFile file,
+                                                   @org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.core.userdetails.UserDetails userDetails) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         ResourceUpdateRequest req = mapper.readValue(data, ResourceUpdateRequest.class);
@@ -96,13 +98,14 @@ public class ResourceController {
             com.smartcampus.operations.entity.ResourceImage saved = imageRepository.save(img);
             req.setImageId(saved.getId());
         }
-        return ResponseEntity.ok(resourceService.updateResource(id, req));
+        return ResponseEntity.ok(resourceService.updateResource(id, req, userDetails.getUsername()));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<String> delete(@PathVariable java.util.UUID id) {
-        resourceService.deleteResource(id);
+    public ResponseEntity<String> delete(@PathVariable java.util.UUID id,
+                                         @org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.core.userdetails.UserDetails userDetails) {
+        resourceService.deleteResource(id, userDetails.getUsername());
         return ResponseEntity.ok("Resource deleted successfully");
     }
 

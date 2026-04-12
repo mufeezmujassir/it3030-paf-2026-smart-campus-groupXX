@@ -10,11 +10,11 @@ import java.util.UUID;
 
 public interface ResourceService {
 
-    ResourceResponse createResource(ResourceCreateRequest request);
+    ResourceResponse createResource(ResourceCreateRequest request, String userEmail);
 
-    ResourceResponse updateResource(UUID id, ResourceUpdateRequest request);
+    ResourceResponse updateResource(UUID id, ResourceUpdateRequest request, String userEmail);
 
-    void deleteResource(UUID id);
+    void deleteResource(UUID id, String userEmail);
 
     ResourceResponse getResourceById(UUID id);
 

@@ -15,9 +15,10 @@ export const AuthProvider = ({ children }) => {
         const role = localStorage.getItem('userRole');
         const email = localStorage.getItem('userEmail');
         const fullName = localStorage.getItem('userFullName');
-        
+        const id = localStorage.getItem('userId');        // ← add this
+
         if (token && role && email) {
-            setUser({ email, role, fullName });
+            setUser({ id, email, role, fullName });       // ← add id here
         }
         setLoading(false);
     }, []);
@@ -69,14 +70,15 @@ export const AuthProvider = ({ children }) => {
             return;
         }
 
-        const { accessToken, refreshToken, role, email, fullName } = data;
+        const { id, accessToken, refreshToken, role, email, fullName } = data;
         localStorage.setItem('accessToken', accessToken);
         localStorage.setItem('refreshToken', refreshToken);
         localStorage.setItem('userRole', role);
         localStorage.setItem('userEmail', email);
         if (fullName) localStorage.setItem('userFullName', fullName);
-        
-        setUser({ email, role, fullName: fullName || localStorage.getItem('userFullName') });
+        if (id) localStorage.setItem('userId', id);
+
+        setUser({ id, email, role, fullName: fullName || localStorage.getItem('userFullName') });
         
         toast.success('Login successful!');
         
