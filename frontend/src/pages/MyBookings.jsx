@@ -30,22 +30,39 @@ const QRCodeModal = ({ booking, resource, user, onClose }) => {
     // Encode all booking info into the QR payload
     // The QR encodes a compact JSON string — a door scanner / admin tablet
     // can decode this and verify the booking ID + status server-side
-    const payload = JSON.stringify({
-        bookingId:    booking.id,
-        resourceId:   booking.resourceId,
-        resourceName: booking.resourceName,
-        userId:       booking.userId,
-        userName:     booking.userFullName || user?.fullName,
-        userEmail:    booking.userEmail    || user?.email,
-        date:         booking.bookingDate,
-        startTime:    booking.startTime,
-        endTime:      booking.endTime,
-        status:       booking.status,
-        purpose:      booking.purpose,
-        issuedAt:     new Date().toISOString(),
-    });
+    // Format the booking date from array or string
+    const fmtDate = (d) => {
+        try {
+            const s = Array.isArray(d)
+                ? `${d[0]}-${String(d[1]).padStart(2,'0')}-${String(d[2]).padStart(2,'0')}`
+                : String(d);
+            return format(new Date(s + 'T00:00:00'), 'EEEE, MMMM d, yyyy');
+        } catch { return String(d); }
+    };
 
-    // Google Charts QR API — no key, no CORS issues, works offline-friendly
+    // Human-readable plain-text payload — scans as clean bullet list on any phone
+    const payload = [
+        '════════════════════════',
+        '   MAPLELINK BOOKING PASS',
+        '════════════════════════',
+        '',
+        `▸ Resource   : ${booking.resourceName}`,
+        `▸ Date       : ${fmtDate(booking.bookingDate)}`,
+        `▸ Time       : ${booking.startTime} – ${booking.endTime}`,
+        `▸ Status     : ${booking.status}`,
+        '',
+        `▸ Booked by  : ${booking.userFullName || user?.fullName}`,
+        `▸ Email      : ${booking.userEmail || user?.email}`,
+        booking.purpose ? `▸ Purpose    : ${booking.purpose}` : null,
+        '',
+        '────────────────────────',
+        `  Booking ID : ${booking.id}`,
+        `  Issued     : ${new Date().toLocaleString()}`,
+        '────────────────────────',
+        '',
+        '  Scan to verify at reception',
+    ].filter(line => line !== null).join('\n');
+
     const encodedPayload = encodeURIComponent(payload);
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=10&data=${encodedPayload}`;
 
@@ -62,15 +79,6 @@ const QRCodeModal = ({ booking, resource, user, onClose }) => {
         } catch {
             toast.error('Failed to download QR code');
         }
-    };
-
-    const formatBookingDate = (d) => {
-        try {
-            const dateStr = Array.isArray(d)
-                ? `${d[0]}-${String(d[1]).padStart(2,'0')}-${String(d[2]).padStart(2,'0')}`
-                : d;
-            return format(new Date(dateStr + 'T00:00:00'), 'EEEE, MMMM d, yyyy');
-        } catch { return String(d); }
     };
 
     const resourceIcon = { LAB: '🧪', LECTURE_HALL: '📚', MEETING_SPACE: '💼', STUDY_ROOM: '📖', EQUIPMENT: '🔧' }[resource?.type] || '🏢';
@@ -141,7 +149,7 @@ const QRCodeModal = ({ booking, resource, user, onClose }) => {
                                     <Calendar className="w-3 h-3 text-text-secondary" />
                                     <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider">Date</p>
                                 </div>
-                                <p className="text-xs font-bold text-text-primary">{formatBookingDate(booking.bookingDate)}</p>
+                                <p className="text-xs font-bold text-text-primary">{fmtDate(booking.bookingDate)}</p>
                             </div>
                             <div className="p-2.5 bg-gray-50 rounded-xl">
                                 <div className="flex items-center gap-1.5 mb-0.5">
