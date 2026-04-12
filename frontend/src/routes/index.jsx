@@ -13,9 +13,16 @@ import ResourceDetail from '../pages/ResourceDetail';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RoleBasedRoute } from './RoleBasedRoute';
+import TicketList from '../pages/tickets/TicketList';
+import CreateTicket from '../pages/tickets/CreateTicket';
+import TicketDetail from '../pages/tickets/TicketDetail';
+import TechnicianDashboard from '../pages/technician/TechnicianDashboard';
 import AdminBookingManagement from '../pages/admin/AdminBookingManagement';
 import MyBookings from '../pages/MyBookings';  // Add this import
 import MaintenanceRequests from '../pages/technician/MaintenanceRequests';
+import MyBookings from '../pages/MyBookings';
+import StudentDashboard from '../pages/student/StudentDashboard';
+import StaffDashboard from '../pages/staff/StaffDashboard';
 
 const AppRoutes = () => {
     return (
@@ -33,6 +40,15 @@ const AppRoutes = () => {
                 <Route path="/settings" element={<ProfileSettings />} />
                 <Route path="/resources" element={<Resources />} />
                 <Route path="/resources/:id" element={<ResourceDetail />} />
+
+                {/* Ticket Routes */}
+                <Route path="/tickets" element={<TicketList />} />
+                <Route path="/tickets/:id" element={<TicketDetail />} />
+                <Route path="/tickets/create" element={
+                    <RoleBasedRoute allowedRoles={['STUDENT', 'STAFF']}>
+                        <CreateTicket />
+                    </RoleBasedRoute>
+                } />
 
                 {/* Admin Nested Routes */}
                 <Route path="/admin/*" element={
@@ -54,11 +70,10 @@ const AppRoutes = () => {
                         <Outlet />
                     </RoleBasedRoute>
                 }>
-                    <Route index element={<div className="p-8">Student Dashboard</div>} />
+                    <Route index element={<StudentDashboard />} />
                     <Route path="my-bookings" element={<MyBookings />} />
                     <Route path="courses" element={<div className="p-8">My Courses</div>} />
                     <Route path="grades" element={<div className="p-8">Grades</div>} />
-                    <Route path="tickets" element={<div className="p-8">Help Desk</div>} />
                 </Route>
 
                 {/* Staff Routes */}
@@ -67,17 +82,16 @@ const AppRoutes = () => {
                         <Outlet />
                     </RoleBasedRoute>
                 }>
-                    <Route index element={<div className="p-8">Staff Dashboard</div>} />
+                    <Route index element={<StaffDashboard />} />
                     <Route path="my-bookings" element={<MyBookings />} />
                     <Route path="manage" element={<div className="p-8">Management</div>} />
                     <Route path="department" element={<div className="p-8">My Department</div>} />
-                    <Route path="tickets" element={<div className="p-8">Service Requests</div>} />
                 </Route>
 
                 {/* Technician Routes */}
                 <Route path="/technician" element={
                     <RoleBasedRoute allowedRoles={['TECHNICIAN']}>
-                        <Outlet />
+                        <TechnicianDashboard />
                     </RoleBasedRoute>
                 }>
                     <Route index element={<div className="p-8">Technician Dashboard</div>} />

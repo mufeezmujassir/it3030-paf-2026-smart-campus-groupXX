@@ -8,6 +8,7 @@ import com.smartcampus.operations.entity.User;
 import com.smartcampus.operations.exception.UserNotFoundException;
 import com.smartcampus.operations.mapper.UserMapper;
 import com.smartcampus.operations.repository.UserRepository;
+import com.smartcampus.operations.service.NotificationService;
 import com.smartcampus.operations.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,10 +28,11 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
-    public UserResponse createUser(UserCreateRequest request) {
+    public UserResponse createUser(UserCreateRequest request, String adminEmail) {
         // Check if email already exists
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new IllegalArgumentException("User with email " + request.getEmail() + " already exists");
@@ -40,6 +42,18 @@ public class UserServiceImpl implements UserService {
         User savedUser = userRepository.save(user);
 
         log.info("User created: {} with role {}", savedUser.getEmail(), savedUser.getRole());
+
+        // Send notification to admin who created the user
+        User admin = userRepository.findByEmail(adminEmail).orElse(null);
+        if (admin != null) {
+            notificationService.sendNotification(
+                    admin.getId(),
+                    "User Added",
+                    String.format("User '%s' added successfully with role %s", savedUser.getFullName(), savedUser.getRole()),
+                    "USER_CREATED"
+            );
+        }
+
         return userMapper.toResponse(savedUser);
     }
 
@@ -61,12 +75,24 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void deleteUser(UUID id) {
-        if (!userRepository.existsById(id)) {
-            throw new UserNotFoundException("User not found with id: " + id);
-        }
+    public void deleteUser(UUID id, String adminEmail) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + id));
+        
+        String deletedUserName = user.getFullName();
         userRepository.deleteById(id);
         log.info("User deleted with id: {}", id);
+
+        // Send notification to admin who deleted the user
+        User admin = userRepository.findByEmail(adminEmail).orElse(null);
+        if (admin != null) {
+            notificationService.sendNotification(
+                    admin.getId(),
+                    "User Removed",
+                    String.format("User '%s' removed from the system", deletedUserName),
+                    "USER_DELETED"
+            );
+        }
     }
 
     @Override
@@ -93,6 +119,15 @@ public class UserServiceImpl implements UserService {
 
         User updatedUser = userRepository.save(user);
         log.info("User profile updated for email: {}", email);
+
+        // Send notification to user
+        notificationService.sendNotification(
+                updatedUser.getId(),
+                "Profile Updated",
+                "Your profile has been updated successfully.",
+                "PROFILE_UPDATED"
+        );
+
         return userMapper.toResponse(updatedUser);
     }
 
@@ -109,6 +144,14 @@ public class UserServiceImpl implements UserService {
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
         log.info("Password changed for user: {}", email);
+
+        // Send notification to user
+        notificationService.sendNotification(
+                user.getId(),
+                "Password Changed",
+                "Your password has been changed successfully.",
+                "PASSWORD_CHANGED"
+        );
     }
 
     @Override
@@ -120,6 +163,15 @@ public class UserServiceImpl implements UserService {
         user.setTwoFactorEnabled(!user.getTwoFactorEnabled());
         User updatedUser = userRepository.save(user);
         log.info("MFA toggled to {} for user: {}", updatedUser.getTwoFactorEnabled(), email);
+
+        // Send notification to user
+        notificationService.sendNotification(
+                updatedUser.getId(),
+                "MFA Status Changed",
+                String.format("Two-factor authentication %s successfully", updatedUser.getTwoFactorEnabled() ? "enabled" : "disabled"),
+                "MFA_TOGGLED"
+        );
+
         return userMapper.toResponse(updatedUser);
     }
 }
