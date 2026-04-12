@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -111,5 +113,27 @@ public class BookingController {
             @AuthenticationPrincipal UserDetails userDetails) {
         BookingResponse response = bookingService.updateBooking(id, request, userDetails.getUsername());
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/stats")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Long>> getBookingStats() {
+        Map<String, Long> stats = new HashMap<>();
+        stats.put("total", bookingService.getTotalBookingsCount());
+        stats.put("pending", bookingService.getPendingBookingsCount());
+        stats.put("approved", bookingService.getApprovedBookingsCount());
+        stats.put("rejected", bookingService.getRejectedBookingsCount());
+        stats.put("cancelled", bookingService.getCancelledBookingsCount());
+        stats.put("maintenance", bookingService.getMaintenanceBookingsCount());
+        return ResponseEntity.ok(stats);
+    }
+
+    @GetMapping("/stats/my")
+    public ResponseEntity<Map<String, Long>> getMyBookingStats(@AuthenticationPrincipal UserDetails userDetails) {
+        Map<String, Long> stats = new HashMap<>();
+        stats.put("total", bookingService.getUserBookingsCount(userDetails.getUsername()));
+        stats.put("pending", bookingService.getUserPendingBookingsCount(userDetails.getUsername()));
+        stats.put("approved", bookingService.getUserApprovedBookingsCount(userDetails.getUsername()));
+        return ResponseEntity.ok(stats);
     }
 }

@@ -2,6 +2,7 @@
 package com.smartcampus.operations.service;
 
 import com.smartcampus.operations.dto.*;
+import com.smartcampus.operations.entity.BookingStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -29,4 +30,17 @@ public interface BookingService {
     BookingResponse getBookingById(UUID bookingId, String userEmail);
 
     BookingResponse updateBooking(UUID bookingId, BookingUpdateRequest request, String userEmail);
+
+    // Dashboard count methods
+    long getTotalBookingsCount();
+    long getPendingBookingsCount();
+    long getApprovedBookingsCount();
+    long getRejectedBookingsCount();
+    long getCancelledBookingsCount();
+    long getMaintenanceBookingsCount();
+
+    // User-specific counts
+    long getUserBookingsCount(String userEmail);
+    long getUserPendingBookingsCount(String userEmail);
+    long getUserApprovedBookingsCount(String userEmail);
 }
