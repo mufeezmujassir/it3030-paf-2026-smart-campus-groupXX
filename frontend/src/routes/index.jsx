@@ -83,8 +83,6 @@ const AppRoutes = () => {
                     <Route index element={<div className="p-8">Technician Dashboard</div>} />
                     <Route path="my-bookings" element={<MyBookings />} />
                     <Route path="maintenance" element={<MaintenanceRequests />} />
-                    <Route path="safety" element={<div className="p-8">Safety Logs</div>} />
-                    <Route path="environment" element={<div className="p-8">Environment</div>} />
                 </Route>
             </Route>
 
