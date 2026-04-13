@@ -66,7 +66,7 @@ const CreateTicket = () => {
             setError('Description must be at least 20 characters');
             return;
         }
-        if (form.preferredContact && !/^[0-9+\-\s()]{7,15}$/.test(form.preferredContact)) {
+        if (form.preferredContact && !/^[0-9]{10}$/.test(form.preferredContact)) {
             setError('Please enter a valid phone number (7-15 digits)');
             return;
         }
@@ -269,11 +269,11 @@ const CreateTicket = () => {
                                        className="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none"
                                        style={{
                                            backgroundColor: 'var(--color-background)',
-                                           borderColor: form.preferredContact && !/^[0-9+\-\s()]{7,15}$/.test(form.preferredContact) ? '#EF4444' : '#E8D5C4',
+                                           borderColor: form.preferredContact && !/^[0-9]{10}$/.test(form.preferredContact) ? '#EF4444' : '#E8D5C4',
                                            color: 'var(--color-text-primary)',
                                        }} />
-                                {form.preferredContact && !/^[0-9+\-\s()]{7,15}$/.test(form.preferredContact) && (
-                                    <p className="text-xs mt-1 text-red-500">Please enter a valid phone number</p>
+                                {form.preferredContact && !/^[0-9]{10}$/.test(form.preferredContact) && (
+                                    <p className="text-xs mt-1 text-red-500">Please enter a valid 10-digit phone number</p>
                                 )}
                             </div>
                         </div>

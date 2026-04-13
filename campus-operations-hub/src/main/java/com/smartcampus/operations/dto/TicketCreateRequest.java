@@ -28,6 +28,6 @@ public class TicketCreateRequest {
     @Size(min = 3, max = 200, message = "Location must be between 3 and 200 characters")
     private String resourceLocation;
 
-    @Pattern(regexp = "^(|[0-9+\\-\\s()]{7,15})$", message = "Please enter a valid phone number")
+    @Pattern(regexp = "^[0-9]{10}$", message = "Please enter a valid 10-digit phone number")
     private String preferredContact;
 }
