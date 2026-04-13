@@ -13,6 +13,7 @@ export const addResolutionNotes = (id, resolutionNotes) => api.put(`${TICKETS_UR
 export const deleteTicket = (id) => api.delete(`${TICKETS_URL}/${id}`);
 export const autoAssignTicket = (id) => api.post(`${TICKETS_URL}/${id}/auto-assign`);
 export const getAvailableTechnicians = () => api.get(`${TICKETS_URL}/technicians`);
+export const technicianRejectTicket = (id, reason) => api.patch(`${TICKETS_URL}/${id}/technician-reject`, { reason });
 
 // Attachments
 export const uploadAttachment = (ticketId, file) => {

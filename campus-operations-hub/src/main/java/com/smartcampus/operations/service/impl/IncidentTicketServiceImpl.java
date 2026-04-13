@@ -52,7 +52,7 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                 .category(request.getCategory())
                 .description(request.getDescription())
                 .priority(request.getPriority())
-                .status(assignedTechnician != null ? TicketStatus.IN_PROGRESS : TicketStatus.OPEN)
+                .status(assignedTechnician != null ? TicketStatus.ASSIGNED : TicketStatus.OPEN)
                 .resourceLocation(request.getResourceLocation())
                 .preferredContact(request.getPreferredContact())
                 .createdBy(user)
@@ -167,7 +167,7 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
         }
 
         ticket.setAssignedTo(technician);
-        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket.setStatus(TicketStatus.ASSIGNED);
         TicketResponse response = mapToResponse(ticketRepository.save(ticket));
 
         // Notify the technician
@@ -311,7 +311,7 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                 );
 
         ticket.setAssignedTo(technician);
-        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket.setStatus(TicketStatus.ASSIGNED);
         TicketResponse response = mapToResponse(ticketRepository.save(ticket));
 
         // Notify the technician
@@ -339,6 +339,27 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    @Transactional
+    public TicketResponse technicianRejectTicket(UUID id, TicketRejectRequest request, String userEmail) {
+        User technician = getUserByEmail(userEmail);
+
+        if (technician.getRole() != Role.TECHNICIAN) {
+            throw new UnauthorizedTicketAccessException();
+        }
+
+        IncidentTicket ticket = getTicketOrThrow(id);
+
+        if (!ticket.getAssignedTo().getId().equals(technician.getId())) {
+            throw new UnauthorizedTicketAccessException();
+        }
+
+        ticket.setStatus(TicketStatus.OPEN);
+        ticket.setAssignedTo(null);
+        ticket.setRejectionReason("Technician rejected: " + request.getReason());
+        return mapToResponse(ticketRepository.save(ticket));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private User getUserByEmail(String email) {
@@ -363,7 +384,7 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
         if (current == TicketStatus.CLOSED || current == TicketStatus.REJECTED) {
             throw new InvalidStatusTransitionException(current, next);
         }
-        if (next == TicketStatus.IN_PROGRESS && user.getRole() != Role.ADMIN && user.getRole() != Role.TECHNICIAN) {
+        if (next == TicketStatus.IN_PROGRESS && user.getRole() != Role.TECHNICIAN) {
             throw new UnauthorizedTicketAccessException();
         }
         if (next == TicketStatus.CLOSED && user.getRole() != Role.ADMIN) {

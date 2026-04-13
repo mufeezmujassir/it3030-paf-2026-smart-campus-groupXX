@@ -29,4 +29,6 @@ public interface IncidentTicketService {
     TicketResponse autoAssignTicket(UUID id, String userEmail);
 
     List<com.smartcampus.operations.dto.TechnicianResponse> getAvailableTechnicians();
+
+    TicketResponse technicianRejectTicket(UUID id, TicketRejectRequest request, String userEmail);
 }

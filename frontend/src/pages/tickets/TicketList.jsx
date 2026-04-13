@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 
 const STATUS_STYLES = {
     OPEN: 'bg-amber-100 text-amber-800 border border-amber-200',
+    ASSIGNED: 'bg-purple-100 text-purple-800 border border-purple-200',
     IN_PROGRESS: 'bg-blue-100 text-blue-800 border border-blue-200',
     RESOLVED: 'bg-green-100 text-green-800 border border-green-200',
     CLOSED: 'bg-gray-100 text-gray-600 border border-gray-200',
