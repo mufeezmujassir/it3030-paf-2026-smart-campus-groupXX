@@ -706,4 +706,55 @@ public class BookingServiceImpl implements BookingService {
                 .priority(booking.getPriority())
                 .build();
     }
+
+    @Override
+    public long getTotalBookingsCount() {
+        return bookingRepository.count();
+    }
+
+    @Override
+    public long getPendingBookingsCount() {
+        return bookingRepository.countByStatus(BookingStatus.PENDING);
+    }
+
+    @Override
+    public long getApprovedBookingsCount() {
+        return bookingRepository.countByStatus(BookingStatus.APPROVED);
+    }
+
+    @Override
+    public long getRejectedBookingsCount() {
+        return bookingRepository.countByStatus(BookingStatus.REJECTED);
+    }
+
+    @Override
+    public long getCancelledBookingsCount() {
+        return bookingRepository.countByStatus(BookingStatus.CANCELLED);
+    }
+
+    @Override
+    public long getMaintenanceBookingsCount() {
+        return bookingRepository.findByStatusAndBookingType(BookingStatus.APPROVED, "MAINTENANCE").size();
+    }
+
+    @Override
+    public long getUserBookingsCount(String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return bookingRepository.countByUserId(user.getId());
+    }
+
+    @Override
+    public long getUserPendingBookingsCount(String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return bookingRepository.countByUserIdAndStatus(user.getId(), BookingStatus.PENDING);
+    }
+
+    @Override
+    public long getUserApprovedBookingsCount(String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return bookingRepository.countByUserIdAndStatus(user.getId(), BookingStatus.APPROVED);
+    }
 }
