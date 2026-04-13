@@ -1,6 +1,8 @@
 // src/main/java/com/smartcampus/operations/dto/BookingCreateRequest.java
+
 package com.smartcampus.operations.dto;
 
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -31,6 +33,7 @@ public class BookingCreateRequest {
 
     private String purpose;
 
+    @Min(value = 1, message = "Expected attendees must be at least 1")
     private Integer expectedAttendees;
 
     // Maintenance fields (for technicians)
