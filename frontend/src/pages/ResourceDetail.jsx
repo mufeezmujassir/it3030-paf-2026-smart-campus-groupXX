@@ -227,6 +227,7 @@ const ResourceDetail = () => {
                         <BookingCalendar
                             resourceId={resource.id}
                             resourceName={resource.name}
+                            resourceCapacity={resource.capacity}  // Add this
                             isResourceActive={resource.status === 'ACTIVE'}
                             onBookingCreated={handleBookingCreated}
                         />

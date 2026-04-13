@@ -51,6 +51,15 @@ public class BookingServiceImpl implements BookingService {
         Resource resource = resourceRepository.findById(request.getResourceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
 
+        // ========== NEW: Validate capacity ==========
+        if (request.getExpectedAttendees() != null && resource.getCapacity() != null) {
+            if (request.getExpectedAttendees() > resource.getCapacity()) {
+                throw new InvalidBookingException(
+                        String.format("Expected attendees (%d) exceeds resource capacity (%d). Please reduce the number of attendees or choose a larger resource.",
+                                request.getExpectedAttendees(), resource.getCapacity()));
+            }
+        }
+
         // Check if resource is active
         if (resource.getStatus() != ResourceStatus.ACTIVE) {
             throw new InvalidBookingException("Resource is currently unavailable for booking");
@@ -190,8 +199,22 @@ public class BookingServiceImpl implements BookingService {
             throw new InvalidBookingException("Booking is already approved");
         }
 
-        // If approving, check for conflicts again and reject other pending bookings
+        // If approving, check capacity and conflicts
         if (request.getStatus() == BookingStatus.APPROVED) {
+
+            // ========== NEW: Validate capacity before approval ==========
+            Resource resource = resourceRepository.findById(booking.getResourceId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
+
+            if (booking.getExpectedAttendees() != null && resource.getCapacity() != null) {
+                if (booking.getExpectedAttendees() > resource.getCapacity()) {
+                    throw new InvalidBookingException(
+                            String.format("Cannot approve: Expected attendees (%d) exceeds resource capacity (%d). Please ask the user to reduce the number of attendees or reject this booking.",
+                                    booking.getExpectedAttendees(), resource.getCapacity()));
+                }
+            }
+
+            // Check for conflicts
             List<Booking> overlappingApproved = bookingRepository.findOverlappingApprovedBookings(
                     booking.getResourceId(),
                     booking.getBookingDate(),
@@ -201,7 +224,6 @@ public class BookingServiceImpl implements BookingService {
             if (!overlappingApproved.isEmpty()) {
                 throw new InvalidBookingException("This time slot is now booked by another approved booking");
             }
-
             // When approving a booking, automatically reject all other PENDING bookings for the same slot
             rejectOtherPendingBookings(booking);
         }

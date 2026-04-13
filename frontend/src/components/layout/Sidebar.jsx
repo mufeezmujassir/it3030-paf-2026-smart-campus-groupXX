@@ -23,8 +23,6 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
             { icon: <LayoutDashboard size={20} />, label: 'My Dashboard', path: '/student' },
             { icon: <Building size={20} />, label: 'Assets & Labs', path: '/resources' },
             { icon: <CalendarDays size={20} />, label: 'My Bookings', path: '/student/my-bookings' },
-            { icon: <BookOpen size={20} />, label: 'My Courses', path: '/student/courses' },
-            { icon: <GraduationCap size={20} />, label: 'Grades', path: '/student/grades' },
             { icon: <Ticket size={20} />, label: 'Help Desk', path: '/tickets' },
         ],
         STAFF: [

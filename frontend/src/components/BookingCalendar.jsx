@@ -51,7 +51,13 @@ const startOfDay = (date) => {
     return result;
 };
 
-const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, onBookingCreated }) => {
+const BookingCalendar = ({
+                             resourceId,
+                             resourceName,
+                             resourceCapacity,  // Add this
+                             isResourceActive = true,
+                             onBookingCreated
+                         }) => {
     const { user } = useAuth();
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [timeSlots, setTimeSlots] = useState([]);
@@ -184,6 +190,13 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
     const handleBookingSubmit = async (e) => {
         e.preventDefault();
         if (!selectedSlot) return;
+
+        // ========== NEW: Check capacity if we have resource info ==========
+        if (expectedAttendees && resourceCapacity && parseInt(expectedAttendees) > resourceCapacity) {
+            toast.error(`Expected attendees (${expectedAttendees}) exceeds resource capacity (${resourceCapacity}). Please reduce the number of attendees.`);
+            return;
+        }
+
         setSubmitting(true);
         try {
             const formattedDate = formatDate(selectedDate);
@@ -543,6 +556,12 @@ const BookingCalendar = ({ resourceId, resourceName, isResourceActive = true, on
                                         placeholder="Number of people attending"
                                         min="1"
                                     />
+                                    {resourceCapacity && expectedAttendees && parseInt(expectedAttendees) > resourceCapacity && (
+                                        <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                                            <AlertCircle className="w-3 h-3" />
+                                            Exceeds capacity ({resourceCapacity} max). Please reduce attendees.
+                                        </p>
+                                    )}
                                 </div>
                             )}
 
