@@ -52,7 +52,25 @@ const CreateTicket = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!form.category) { setError('Please select a category'); return; }
+
+        // Frontend validation
+        if (!form.category) {
+            setError('Please select a category');
+            return;
+        }
+        if (form.title.length < 5) {
+            setError('Title must be at least 5 characters');
+            return;
+        }
+        if (form.description.length < 20) {
+            setError('Description must be at least 20 characters');
+            return;
+        }
+        if (form.preferredContact && !/^[0-9]{10}$/.test(form.preferredContact)) {
+            setError('Please enter a valid phone number (7-15 digits)');
+            return;
+        }
+
         setLoading(true);
         setError(null);
         try {
@@ -188,12 +206,19 @@ const CreateTicket = () => {
                                       className="w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 resize-none"
                                       style={{
                                           backgroundColor: 'var(--color-background)',
-                                          borderColor: '#E8D5C4',
+                                          borderColor: form.description.length > 0 && form.description.length < 20 ? '#EF4444' : '#E8D5C4',
                                           color: 'var(--color-text-primary)',
                                       }} />
-                            <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-                                Minimum 20 characters required. Be as specific as possible.
-                            </p>
+                            <div className="flex justify-between mt-1">
+                                <p className="text-xs" style={{
+                                    color: form.description.length < 20 && form.description.length > 0 ? '#EF4444' : 'var(--color-text-secondary)'
+                                }}>
+                                    {form.description.length < 20 ? `${20 - form.description.length} more characters needed` : '✓ Good length'}
+                                </p>
+                                <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                                    {form.description.length}/2000
+                                </p>
+                            </div>
                         </div>
                     </div>
 
@@ -240,13 +265,16 @@ const CreateTicket = () => {
                                     Preferred Contact
                                 </label>
                                 <input name="preferredContact" value={form.preferredContact} onChange={handleChange}
-                                       placeholder="Phone or email"
+                                       placeholder="Phone number (e.g. 0771234567)"
                                        className="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none"
                                        style={{
                                            backgroundColor: 'var(--color-background)',
-                                           borderColor: '#E8D5C4',
+                                           borderColor: form.preferredContact && !/^[0-9]{10}$/.test(form.preferredContact) ? '#EF4444' : '#E8D5C4',
                                            color: 'var(--color-text-primary)',
                                        }} />
+                                {form.preferredContact && !/^[0-9]{10}$/.test(form.preferredContact) && (
+                                    <p className="text-xs mt-1 text-red-500">Please enter a valid 10-digit phone number</p>
+                                )}
                             </div>
                         </div>
                     </div>

@@ -97,4 +97,12 @@ public class IncidentTicketController {
     public ResponseEntity<List<com.smartcampus.operations.dto.TechnicianResponse>> getTechnicians() {
         return ResponseEntity.ok(ticketService.getAvailableTechnicians());
     }
+
+    @PatchMapping("/{id}/technician-reject")
+    public ResponseEntity<TicketResponse> technicianReject(
+            @PathVariable UUID id,
+            @Valid @RequestBody TicketRejectRequest request,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ticketService.technicianRejectTicket(id, request, userDetails.getUsername()));
+    }
 }

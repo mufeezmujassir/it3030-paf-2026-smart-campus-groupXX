@@ -7,10 +7,11 @@ import {
     addComment, getComments, updateComment, deleteComment
 } from '../../services/ticketService';
 import { useAuth } from '../../context/AuthContext';
-import { autoAssignTicket, getAvailableTechnicians } from '../../services/ticketService';
+import { autoAssignTicket, getAvailableTechnicians, technicianRejectTicket } from '../../services/ticketService';
 
 const STATUS_STYLES = {
     OPEN: 'bg-amber-100 text-amber-800 border border-amber-200',
+    ASSIGNED: 'bg-purple-100 text-purple-800 border border-purple-200',
     IN_PROGRESS: 'bg-blue-100 text-blue-800 border border-blue-200',
     RESOLVED: 'bg-green-100 text-green-800 border border-green-200',
     CLOSED: 'bg-gray-100 text-gray-600 border border-gray-200',
@@ -73,6 +74,8 @@ const TicketDetail = () => {
 
     const [technicians, setTechnicians] = useState([]);
     const [assignMode, setAssignMode] = useState('auto');
+    const [showTechRejectModal, setShowTechRejectModal] = useState(false);
+    const [techRejectReason, setTechRejectReason] = useState('');
 
     const [newComment, setNewComment] = useState('');
     const [editingCommentId, setEditingCommentId] = useState(null);
@@ -207,6 +210,33 @@ const TicketDetail = () => {
         }
     };
 
+    const handleStartWork = async () => {
+        setActionLoading(true);
+        try {
+            const res = await updateTicketStatus(id, 'IN_PROGRESS');
+            setTicket(res.data);
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to start work');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleTechnicianReject = async () => {
+        if (!techRejectReason.trim()) return;
+        setActionLoading(true);
+        try {
+            const res = await technicianRejectTicket(id, techRejectReason.trim());
+            setTicket(res.data);
+            setShowTechRejectModal(false);
+            setTechRejectReason('');
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to return ticket');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     const handleAttachmentUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -286,11 +316,17 @@ const TicketDetail = () => {
     const timelineEvents = [
         { label: 'Ticket Created', time: ticket.createdAt, by: ticket.createdByName, icon: '🎫' },
         ticket.assignedToName && { label: `Assigned to ${ticket.assignedToName}`, time: ticket.updatedAt, by: 'Admin', icon: '👤' },
-        ticket.status === 'IN_PROGRESS' && { label: 'Work Started', time: ticket.updatedAt, by: ticket.assignedToName, icon: '🔧' },
+        ['IN_PROGRESS', 'RESOLVED', 'CLOSED'].includes(ticket.status) && ticket.assignedToName && { label: 'Work Started', time: ticket.updatedAt, by: ticket.assignedToName, icon: '🔧' },
         ticket.status === 'RESOLVED' && { label: 'Ticket Resolved', time: ticket.updatedAt, by: ticket.assignedToName, icon: '✅' },
         ticket.status === 'CLOSED' && { label: 'Ticket Closed', time: ticket.updatedAt, by: 'Admin', icon: '🔒' },
         ticket.status === 'REJECTED' && { label: 'Ticket Rejected', time: ticket.updatedAt, by: 'Admin', icon: '❌' },
     ].filter(Boolean);
+
+    console.log('user id:', user?.id);
+    console.log('assignedToId:', ticket.assignedToId);
+    console.log('isAssigned:', isAssigned);
+    console.log('isTechnician:', isTechnician);
+    console.log('ticket status:', ticket.status);
 
     return (
         <div className="min-h-screen p-6" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -529,11 +565,17 @@ const TicketDetail = () => {
                                     ⚡ Lifecycle Actions
                                 </h2>
                                 <div className="space-y-2">
-                                    {isAdmin && ['OPEN', 'IN_PROGRESS'].includes(ticket.status) && (
+                                    {isAdmin && ['OPEN', 'ASSIGNED', 'IN_PROGRESS'].includes(ticket.status) && (
                                         <button onClick={() => setShowAssignModal(true)}
                                                 className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition hover:opacity-80"
                                                 style={{ borderColor: '#E8D5C4', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-background)' }}>
                                             👤 {ticket.assignedToName ? 'Reassign Technician' : 'Assign Technician'}
+                                        </button>
+                                    )}
+                                    {isTechnician && isAssigned && ticket.status === 'ASSIGNED' && (
+                                        <button onClick={handleStartWork}
+                                                className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition hover:opacity-80 border-blue-200 text-blue-700 bg-blue-50">
+                                            🔧 Start Work
                                         </button>
                                     )}
                                     {(isAdmin || (isTechnician && isAssigned)) && ticket.status === 'IN_PROGRESS' && (
@@ -547,6 +589,12 @@ const TicketDetail = () => {
                                                 className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition hover:opacity-80"
                                                 style={{ borderColor: '#E8D5C4', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-background)' }}>
                                             🔒 Close Ticket
+                                        </button>
+                                    )}
+                                    {isTechnician && isAssigned && ['ASSIGNED', 'IN_PROGRESS'].includes(ticket.status) && (
+                                        <button onClick={() => setShowTechRejectModal(true)}
+                                                className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition hover:opacity-80 border-orange-200 text-orange-600 bg-orange-50">
+                                            ↩️ Cannot Handle — Return Ticket
                                         </button>
                                     )}
                                     {isAdmin && (
@@ -854,8 +902,23 @@ const TicketDetail = () => {
                               style={{ borderColor: '#E8D5C4', backgroundColor: 'var(--color-background)', color: 'var(--color-text-primary)' }} />
                 </Modal>
             )}
+
+            {showTechRejectModal && (
+                <Modal title="Return Ticket" onClose={() => setShowTechRejectModal(false)}
+                       onConfirm={handleTechnicianReject} confirmLabel="Return Ticket" confirmColor="#F97316" loading={actionLoading}>
+                    <p className="text-sm mb-3" style={{ color: 'var(--color-text-secondary)' }}>
+                        Please provide a reason. Ticket will go back to OPEN for reassignment.
+                    </p>
+                    <textarea value={techRejectReason} onChange={e => setTechRejectReason(e.target.value)}
+                              rows={3} placeholder="Reason for returning ticket..."
+                              className="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none resize-none"
+                              style={{ borderColor: '#E8D5C4', backgroundColor: 'var(--color-background)', color: 'var(--color-text-primary)' }} />
+                </Modal>
+            )}
         </div>
+
     );
+
 };
 
 export default TicketDetail;
