@@ -201,20 +201,13 @@ const Resources = () => {
                                         <p className="flex items-center gap-1.5"><MapPin size={13} /> {r.location || '-'}</p>
                                         <p className="flex items-center gap-1.5"><Users size={13} /> Up to {r.capacity || '-'} people</p>
                                     </div>
-                                    <div className="mt-4 flex gap-2">
+                                    <div className="mt-4">
                                         <Link
                                             to={`/resources/${r.id}`}
-                                            className="flex-1 text-center text-sm border border-gray-200 rounded-lg py-2 font-semibold text-gray-700 hover:bg-gray-50"
+                                            className="block w-full text-center text-sm border border-gray-200 rounded-lg py-2 font-semibold text-gray-700 hover:bg-gray-50"
                                         >
                                             Details
                                         </Link>
-                                        <button
-                                            type="button"
-                                            className="flex-1 text-sm bg-primary text-white rounded-lg py-2 font-semibold hover:opacity-95 disabled:bg-gray-300"
-                                            disabled={r.status !== 'ACTIVE'}
-                                        >
-                                            Book Now
-                                        </button>
                                     </div>
                                 </div>
                             </div>
