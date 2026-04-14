@@ -268,10 +268,15 @@ public class MaintenanceServiceImpl implements MaintenanceService {
         return mapToDTO(saved, booking, technician);
     }
 
+    // ─── METHOD 1: requestExtension ───────────────────────────────────────────────
+// FIX: Do NOT update the resource's maintenanceEndDate here.
+//      Only record the requested days on the MaintenanceRequest entity.
+//      The resource end date is only extended if admin APPROVES (see method 2).
+
     @Override
     @Transactional
     public MaintenanceRequestDTO requestExtension(UUID bookingId, int days, String technicianEmail) {
-        log.info("MaintenanceServiceImpl.requestExtension called for booking: {}, days: {}", bookingId, days);
+        log.info("requestExtension called for booking: {}, days: {}", bookingId, days);
 
         User technician = userRepository.findByEmail(technicianEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Technician not found"));
@@ -289,49 +294,61 @@ public class MaintenanceServiceImpl implements MaintenanceService {
         Resource resource = resourceRepository.findById(booking.getResourceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Resource not found"));
 
-        LocalDate newEndDate = resource.getMaintenanceEndDate().plusDays(days);
-        resource.setMaintenanceEndDate(newEndDate);
-        resourceRepository.save(resource);
-
+        // ── KEY FIX: record the request but do NOT change the resource end date ──
+        // The resource end date is only extended after admin approval (see updateMaintenanceStatus).
         maintenanceRequest.setExtensionRequested(days);
         maintenanceRequest.setExtensionReason("Technician requested " + days + " day extension");
         maintenanceRequest.setMaintenanceStatus(MaintenanceStatus.EXTENSION_REQUESTED);
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenanceRequest);
 
-        log.info("Extension requested for booking {}: {} days by technician {}, maintenance extended to {}",
-                bookingId, days, technicianEmail, newEndDate);
+        log.info("Extension request recorded for booking {} — {} days requested by {}. " +
+                        "Resource end date NOT changed yet (pending admin approval).",
+                bookingId, days, technicianEmail);
 
-        // Notify admins
+        // Notify admins — include both the current end date and the proposed new end date
+        LocalDate currentEndDate = resource.getMaintenanceEndDate();
+        LocalDate proposedEndDate = currentEndDate != null ? currentEndDate.plusDays(days) : null;
+
         List<User> admins = userRepository.findByRole(Role.ADMIN);
         for (User admin : admins) {
             notificationService.sendNotification(
                     admin.getId(),
                     "🔄 Maintenance Extension Request",
-                    String.format("Technician %s requests %d additional days for maintenance of %s. New end date: %s",
-                            technician.getFullName(), days, resource.getName(), newEndDate),
+                    String.format(
+                            "Technician %s requests %d additional day(s) for maintenance of %s. " +
+                                    "Current end date: %s. Proposed new end date: %s. " +
+                                    "Please approve or reject in the Maintenance Requests tab.",
+                            technician.getFullName(), days, resource.getName(),
+                            currentEndDate, proposedEndDate),
                     "MAINTENANCE_EXTENSION_REQUEST"
             );
         }
 
-        // Notify affected users about extended maintenance
-        List<Booking> affectedBookings = bookingRepository.findAll().stream()
-                .filter(b -> b.getResourceId().equals(booking.getResourceId()))
-                .filter(b -> b.getStatus() == BookingStatus.APPROVED)
-                .filter(b -> !b.getId().equals(bookingId))
-                .filter(b -> b.getBookingDate().isAfter(resource.getMaintenanceStartDate()) &&
-                        b.getBookingDate().isBefore(newEndDate))
-                .collect(Collectors.toList());
+        // Notify affected users (bookings that fall in the PROPOSED extended window)
+        // — informational only, resource is not actually blocked until admin approves
+        if (proposedEndDate != null && resource.getMaintenanceStartDate() != null) {
+            List<Booking> potentiallyAffected = bookingRepository.findAll().stream()
+                    .filter(b -> b.getResourceId().equals(booking.getResourceId()))
+                    .filter(b -> b.getStatus() == BookingStatus.APPROVED)
+                    .filter(b -> !b.getId().equals(bookingId))
+                    .filter(b -> b.getBookingDate().isAfter(currentEndDate) &&
+                            !b.getBookingDate().isAfter(proposedEndDate))
+                    .collect(Collectors.toList());
 
-        for (Booking affected : affectedBookings) {
-            User affectedUser = userRepository.findById(affected.getUserId()).orElse(null);
-            if (affectedUser != null) {
-                notificationService.sendNotification(
-                        affectedUser.getId(),
-                        "⚠️ Maintenance Extended",
-                        String.format("Maintenance for %s has been extended to %s. Please check your bookings.",
-                                resource.getName(), newEndDate),
-                        "MAINTENANCE_EXTENDED"
-                );
+            for (Booking affected : potentiallyAffected) {
+                User affectedUser = userRepository.findById(affected.getUserId()).orElse(null);
+                if (affectedUser != null) {
+                    notificationService.sendNotification(
+                            affectedUser.getId(),
+                            "ℹ️ Possible Maintenance Extension",
+                            String.format(
+                                    "A technician has requested a %d-day extension for maintenance of %s " +
+                                            "(proposed end: %s). This request is pending admin approval. " +
+                                            "Your booking has not been affected yet — check back for updates.",
+                                    days, resource.getName(), proposedEndDate),
+                            "MAINTENANCE_EXTENSION_PENDING"
+                    );
+                }
             }
         }
 
@@ -351,46 +368,169 @@ public class MaintenanceServiceImpl implements MaintenanceService {
                 .collect(Collectors.toList());
     }
 
+    // ─── METHOD 2: updateMaintenanceStatus ───────────────────────────────────────
+// FIX: When admin approves an EXTENSION_REQUESTED record, extend the resource
+//      end date by the requested days.
+//      When admin rejects, reset maintenanceStatus to IN_PROGRESS and leave
+//      the resource end date exactly as it was (NOT extended).
+
+    // src/main/java/com/smartcampus/operations/service/impl/MaintenanceServiceImpl.java
+
     @Override
     @Transactional
     public MaintenanceRequestDTO updateMaintenanceStatus(UUID maintenanceId, MaintenanceActionDTO action, String adminEmail) {
         MaintenanceRequest maintenanceRequest = maintenanceRequestRepository.findById(maintenanceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Maintenance request not found"));
 
+        MaintenanceStatus previousStatus = maintenanceRequest.getMaintenanceStatus();
+
         maintenanceRequest.setMaintenanceStatus(action.getStatus());
         maintenanceRequest.setAdminNotes(action.getNotes());
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenanceRequest);
 
-        log.info("Maintenance request {} status updated to {} by admin {}",
-                maintenanceId, action.getStatus(), adminEmail);
+        log.info("Maintenance request {} status updated from {} to {} by admin {}",
+                maintenanceId, previousStatus, action.getStatus(), adminEmail);
 
-        if (action.getStatus() == MaintenanceStatus.APPROVED) {
-            Booking booking = bookingRepository.findById(maintenanceRequest.getBookingId()).orElse(null);
-            if (booking != null) {
-                Resource resource = resourceRepository.findById(booking.getResourceId()).orElse(null);
-                if (resource != null) {
-                    resource.setMaintenanceMode(true);
-                    resource.setMaintenanceStartDate(booking.getBookingDate());
-                    resource.setMaintenanceEndDate(booking.getBookingDate());
-                    resource.setMaintenanceReason(maintenanceRequest.getIssueDescription());
+        Booking booking = bookingRepository.findById(maintenanceRequest.getBookingId()).orElse(null);
+        Resource resource = booking != null
+                ? resourceRepository.findById(booking.getResourceId()).orElse(null)
+                : null;
+
+        // ── Handle EXTENSION_REQUESTED resolution ─────────────────────────────
+        if (previousStatus == MaintenanceStatus.EXTENSION_REQUESTED) {
+            if (action.getStatus() == MaintenanceStatus.IN_PROGRESS) {
+                // ========== FIX: Check if the extension was APPROVED or REJECTED ==========
+                // The frontend sends a flag in the notes to indicate approval vs rejection
+                // Look for explicit approval indicators
+                boolean isApproval = action.getNotes() != null &&
+                        (action.getNotes().toLowerCase().contains("approved") ||
+                                action.getNotes().toLowerCase().startsWith("extension approved"));
+
+                // Also check if the notes DON'T contain rejection indicators
+                boolean isRejection = action.getNotes() != null &&
+                        (action.getNotes().toLowerCase().contains("rejected") ||
+                                action.getNotes().toLowerCase().startsWith("extension rejected"));
+
+                if (isApproval && resource != null && maintenanceRequest.getExtensionRequested() != null) {
+                    // ── APPROVE: extend the resource maintenance end date now ──
+                    int requestedDays = maintenanceRequest.getExtensionRequested();
+                    LocalDate currentEnd = resource.getMaintenanceEndDate();
+                    LocalDate newEndDate = currentEnd != null
+                            ? currentEnd.plusDays(requestedDays)
+                            : LocalDate.now().plusDays(requestedDays);
+
+                    resource.setMaintenanceEndDate(newEndDate);
                     resourceRepository.save(resource);
-                    handleConflictingBookings(resource, booking);
+
+                    log.info("Extension APPROVED for maintenance {}. Resource {} end date extended from {} to {}.",
+                            maintenanceId, resource.getName(), currentEnd, newEndDate);
+
+                    // Notify affected users whose bookings now fall in the extended window
+                    if (currentEnd != null) {
+                        List<Booking> nowAffected = bookingRepository.findAll().stream()
+                                .filter(b -> b.getResourceId().equals(resource.getId()))
+                                .filter(b -> b.getStatus() == BookingStatus.APPROVED)
+                                .filter(b -> !b.getId().equals(maintenanceRequest.getBookingId()))
+                                .filter(b -> b.getBookingDate().isAfter(currentEnd) &&
+                                        !b.getBookingDate().isAfter(newEndDate))
+                                .collect(Collectors.toList());
+
+                        for (Booking affected : nowAffected) {
+                            User affectedUser = userRepository.findById(affected.getUserId()).orElse(null);
+                            if (affectedUser != null) {
+                                notificationService.sendNotification(
+                                        affectedUser.getId(),
+                                        "⚠️ Maintenance Extended",
+                                        String.format(
+                                                "Maintenance for %s has been extended to %s. " +
+                                                        "Your booking on %s at %s–%s may be affected. " +
+                                                        "Please contact support or cancel your booking.",
+                                                resource.getName(), newEndDate,
+                                                affected.getBookingDate(),
+                                                affected.getStartTime(), affected.getEndTime()),
+                                        "MAINTENANCE_EXTENDED"
+                                );
+                            }
+                        }
+                    }
+
+                } else if (isRejection) {
+                    // ── REJECT: do NOT touch the resource end date ──
+                    // Resource stays blocked until its original end date only.
+                    log.info("Extension REJECTED for maintenance {}. Resource {} end date unchanged at {}.",
+                            maintenanceId, resource != null ? resource.getName() : "?",
+                            resource != null ? resource.getMaintenanceEndDate() : "?");
+
+                    // Send rejection notification to technician
+                    User technician = userRepository.findById(maintenanceRequest.getTechnicianId()).orElse(null);
+                    if (technician != null) {
+                        notificationService.sendNotification(
+                                technician.getId(),
+                                "❌ Extension Rejected",
+                                String.format("Your extension request for %s has been rejected. Please complete maintenance by the original end date: %s",
+                                        resource != null ? resource.getName() : "Resource",
+                                        resource != null ? resource.getMaintenanceEndDate() : "N/A"),
+                                "EXTENSION_REJECTED"
+                        );
+                    }
+                } else {
+                    // Fallback: If notes don't clearly indicate, log warning and don't extend
+                    log.warn("Extension decision ambiguous for maintenance {}. Notes: '{}'. Resource end date NOT changed.",
+                            maintenanceId, action.getNotes());
                 }
             }
         }
 
+        // ── Handle initial approval of a maintenance booking ──────────────────
+        // (when admin approves a PENDING maintenance booking via the booking status endpoint,
+        //  this path handles any additional MaintenanceRequest-level approval)
+        if (action.getStatus() == MaintenanceStatus.APPROVED && resource != null && booking != null) {
+            resource.setMaintenanceMode(true);
+            resource.setMaintenanceStartDate(booking.getBookingDate());
+            resource.setMaintenanceEndDate(booking.getBookingDate());
+            resource.setMaintenanceReason(maintenanceRequest.getIssueDescription());
+            resourceRepository.save(resource);
+            handleConflictingBookings(resource, booking);
+        }
+
+        // ── Notify technician ─────────────────────────────────────────────────
         User technician = userRepository.findById(maintenanceRequest.getTechnicianId()).orElse(null);
         if (technician != null) {
+            String notificationMessage;
+            if (previousStatus == MaintenanceStatus.EXTENSION_REQUESTED) {
+                boolean approved = action.getNotes() != null &&
+                        (action.getNotes().toLowerCase().contains("approved") ||
+                                action.getNotes().toLowerCase().startsWith("extension approved"));
+                if (approved) {
+                    notificationMessage = String.format(
+                            "Your extension request has been APPROVED. Maintenance end date extended by %d day(s). " +
+                                    "You can now mark the maintenance as completed when done. Admin notes: %s",
+                            maintenanceRequest.getExtensionRequested(), action.getNotes());
+                } else {
+                    notificationMessage = String.format(
+                            "Your extension request has been REJECTED. Please complete the maintenance by the original end date. " +
+                                    "Admin notes: %s", action.getNotes());
+                }
+            } else {
+                notificationMessage = String.format(
+                        "Your maintenance request status has been updated to %s. Notes: %s",
+                        action.getStatus(), action.getNotes());
+            }
+
             notificationService.sendNotification(
                     technician.getId(),
-                    "Maintenance Update",
-                    String.format("Your maintenance request has been updated to %s. Notes: %s",
-                            action.getStatus(), action.getNotes()),
+                    previousStatus == MaintenanceStatus.EXTENSION_REQUESTED
+                            ? (action.getNotes() != null &&
+                            (action.getNotes().toLowerCase().contains("approved") ||
+                                    action.getNotes().toLowerCase().startsWith("extension approved"))
+                               ? "✅ Extension Approved"
+                               : "❌ Extension Rejected")
+                            : "Maintenance Update",
+                    notificationMessage,
                     "MAINTENANCE_UPDATE"
             );
         }
 
-        Booking booking = bookingRepository.findById(maintenanceRequest.getBookingId()).orElse(null);
         return mapToDTO(saved, booking, technician);
     }
 
