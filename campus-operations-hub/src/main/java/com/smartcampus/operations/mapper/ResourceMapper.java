@@ -37,6 +37,10 @@ public class ResourceMapper {
                 .createdAt(r.getCreatedAt())
                 .updatedAt(r.getUpdatedAt())
                 .imageUrl(imageUrl)
+                .maintenanceMode(r.getMaintenanceMode())
+                .maintenanceStartDate(r.getMaintenanceStartDate())
+                .maintenanceEndDate(r.getMaintenanceEndDate())
+                .maintenanceReason(r.getMaintenanceReason())
                 .build();
     }
 }

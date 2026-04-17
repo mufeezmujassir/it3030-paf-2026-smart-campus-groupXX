@@ -51,23 +51,27 @@ const TechnicianDashboard = () => {
                 setTickets(ticketsRes.data || []);
                 setTicketStats(statsRes.data);
 
-                // Fetch maintenance requests (your part)
-                const maintenanceRes = await api.get('/bookings/my', {
-                    params: { size: 100, bookingType: 'MAINTENANCE' }
-                });
+                // ========== FIX: Fetch maintenance requests from the correct endpoint ==========
+                // Use the maintenance endpoint that returns MaintenanceRequestDTO with status
+                const maintenanceRes = await api.get('/maintenance/my-requests');
+                const maintenanceRequests = maintenanceRes.data || [];
 
-                const bookings = maintenanceRes.data.content || maintenanceRes.data;
-                setMaintenanceRequests(bookings);
+                setMaintenanceRequests(maintenanceRequests);
 
-                // Calculate maintenance stats
-                setMaintenanceStats({
-                    total: bookings.length,
-                    pending: bookings.filter(b => b.status === 'PENDING').length,
-                    approved: bookings.filter(b => b.status === 'APPROVED' && b.maintenanceStatus !== 'IN_PROGRESS' && b.maintenanceStatus !== 'COMPLETED').length,
-                    inProgress: bookings.filter(b => b.maintenanceStatus === 'IN_PROGRESS').length,
-                    completed: bookings.filter(b => b.maintenanceStatus === 'COMPLETED' || b.status === 'COMPLETED').length,
-                    cancelled: bookings.filter(b => b.status === 'CANCELLED' || b.status === 'REJECTED').length
-                });
+                // Calculate maintenance stats based on the actual maintenance status
+                const stats = {
+                    total: maintenanceRequests.length,
+                    pending: maintenanceRequests.filter(mr => mr.maintenanceStatus === 'PENDING').length,
+                    approved: maintenanceRequests.filter(mr => mr.maintenanceStatus === 'APPROVED').length,
+                    inProgress: maintenanceRequests.filter(mr => mr.maintenanceStatus === 'IN_PROGRESS').length,
+                    completed: maintenanceRequests.filter(mr => mr.maintenanceStatus === 'COMPLETED').length,
+                    cancelled: maintenanceRequests.filter(mr =>
+                        mr.maintenanceStatus === 'CANCELLED' ||
+                        mr.maintenanceStatus === 'REJECTED'
+                    ).length
+                };
+
+                setMaintenanceStats(stats);
 
                 // Fetch notifications
                 const notifyRes = await notificationService.getNotifications({ size: 5 });
@@ -84,14 +88,24 @@ const TechnicianDashboard = () => {
     }, []);
 
     const getMaintenanceStatusBadge = (request) => {
-        const status = request.maintenanceStatus || request.status;
+        const status = request.maintenanceStatus;
         switch(status) {
-            case 'PENDING': return { text: 'Pending', className: 'bg-amber-100 text-amber-700' };
-            case 'APPROVED': return { text: 'Approved', className: 'bg-emerald-100 text-emerald-700' };
-            case 'IN_PROGRESS': return { text: 'In Progress', className: 'bg-blue-100 text-blue-700' };
-            case 'COMPLETED': return { text: 'Completed', className: 'bg-green-100 text-green-700' };
-            case 'CANCELLED': return { text: 'Cancelled', className: 'bg-gray-100 text-gray-600' };
-            default: return { text: status, className: 'bg-gray-100 text-gray-600' };
+            case 'PENDING':
+                return { text: 'Pending Approval', className: 'bg-amber-100 text-amber-700' };
+            case 'APPROVED':
+                return { text: 'Approved', className: 'bg-emerald-100 text-emerald-700' };
+            case 'IN_PROGRESS':
+                return { text: 'In Progress', className: 'bg-blue-100 text-blue-700' };
+            case 'COMPLETED':
+                return { text: 'Completed', className: 'bg-green-100 text-green-700' };
+            case 'EXTENSION_REQUESTED':
+                return { text: 'Extension Requested', className: 'bg-purple-100 text-purple-700' };
+            case 'REJECTED':
+                return { text: 'Rejected', className: 'bg-rose-100 text-rose-700' };
+            case 'CANCELLED':
+                return { text: 'Cancelled', className: 'bg-gray-100 text-gray-600' };
+            default:
+                return { text: status || 'Unknown', className: 'bg-gray-100 text-gray-600' };
         }
     };
 
@@ -199,7 +213,6 @@ const TechnicianDashboard = () => {
                 {/* Main Content Area - Changes based on active tab */}
                 <div className="lg:col-span-2 space-y-6">
                     {activeTab === 'maintenance' ? (
-                        // MAINTENANCE REQUESTS SECTION (YOUR MODULE)
                         <>
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <h2 className="text-2xl font-black text-text-primary tracking-tighter">Maintenance Queue</h2>
@@ -215,6 +228,24 @@ const TechnicianDashboard = () => {
                                 {maintenanceRequests.length > 0 ? (
                                     maintenanceRequests.slice(0, 5).map(request => {
                                         const statusBadge = getMaintenanceStatusBadge(request);
+                                        // Format the booking date from the DTO
+                                        const bookingDate = request.bookingDate;
+                                        let formattedDate = '';
+                                        if (bookingDate) {
+                                            try {
+                                                const dateStr = Array.isArray(bookingDate)
+                                                    ? `${bookingDate[0]}-${String(bookingDate[1]).padStart(2, '0')}-${String(bookingDate[2]).padStart(2, '0')}`
+                                                    : bookingDate;
+                                                formattedDate = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+                                                    weekday: 'short',
+                                                    month: 'short',
+                                                    day: 'numeric'
+                                                });
+                                            } catch (e) {
+                                                formattedDate = String(bookingDate);
+                                            }
+                                        }
+
                                         return (
                                             <div
                                                 key={request.id}
@@ -223,23 +254,25 @@ const TechnicianDashboard = () => {
                                             >
                                                 <div className="space-y-4">
                                                     <div className="flex items-center justify-between">
-                                                        <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${statusBadge.className}`}>
-                                                            {statusBadge.text}
-                                                        </span>
-                                                        <span className="text-[10px] font-bold text-gray-400 italic">#{request.id.slice(0,8)}</span>
+                                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${statusBadge.className}`}>
+                                        {statusBadge.text}
+                                    </span>
+                                                        <span className="text-[10px] font-bold text-gray-400 italic">#{request.id?.slice(0,8)}</span>
                                                     </div>
                                                     <div>
-                                                        <h3 className="font-black text-text-primary leading-tight group-hover:text-primary transition-colors">{request.resourceName}</h3>
+                                                        <h3 className="font-black text-text-primary leading-tight group-hover:text-primary transition-colors">
+                                                            {request.resourceName || 'Unknown Resource'}
+                                                        </h3>
                                                         <p className="text-[10px] font-bold text-text-secondary uppercase tracking-tighter mt-1">
-                                                            📍 {request.bookingDate} • {request.startTime} - {request.endTime}
+                                                            📍 {formattedDate} • {request.startTime || 'N/A'} - {request.endTime || 'N/A'}
                                                         </p>
                                                     </div>
                                                     <div className="flex items-center justify-between pt-4 border-t border-gray-50">
                                                         <div className="flex items-center space-x-2">
-                                                            <Calendar className="w-3 h-3 text-text-secondary" />
+                                                            <Wrench className="w-3 h-3 text-text-secondary" />
                                                             <span className="text-[10px] font-bold text-text-secondary uppercase">
-                                                                {request.purpose?.substring(0, 50) || 'Maintenance request'}
-                                                            </span>
+                                            {request.issueDescription?.substring(0, 50) || 'Maintenance request'}
+                                        </span>
                                                         </div>
                                                         <ArrowRight size={16} className="text-primary group-hover:translate-x-1 transition" />
                                                     </div>
