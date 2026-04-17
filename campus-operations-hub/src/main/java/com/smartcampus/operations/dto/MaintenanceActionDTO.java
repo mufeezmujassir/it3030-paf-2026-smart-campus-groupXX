@@ -17,4 +17,9 @@ public class MaintenanceActionDTO {
     private String notes;
 
     private Integer estimatedHours;
+
+    // NEW: Explicit flag for extension approval/rejection
+    // true = approve extension, false = reject extension, null = not an extension action
+    private Boolean extensionApproved;
+
 }

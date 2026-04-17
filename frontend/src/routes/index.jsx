@@ -22,6 +22,7 @@ import MyBookings from '../pages/MyBookings';  // Add this import
 import MaintenanceRequests from '../pages/technician/MaintenanceRequests';
 import StudentDashboard from '../pages/student/StudentDashboard';
 import StaffDashboard from '../pages/staff/StaffDashboard';
+import AdminResourceCalendar from '../pages/admin/AdminResourceCalendar';
 
 const AppRoutes = () => {
     return (
@@ -61,6 +62,7 @@ const AppRoutes = () => {
                     <Route path="assets" element={<AdminResourceManagement />} />
                     <Route path="schedules" element={<AdminResourceManagement />} />
                     <Route path="bookings" element={<AdminBookingManagement />} />
+                    <Route path="calendar" element={<AdminResourceCalendar />} />
                 </Route>
 
                 {/* Student Routes */}

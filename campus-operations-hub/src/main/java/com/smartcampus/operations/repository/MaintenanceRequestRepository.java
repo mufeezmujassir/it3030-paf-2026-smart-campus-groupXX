@@ -15,4 +15,5 @@ public interface MaintenanceRequestRepository extends JpaRepository<MaintenanceR
     Optional<MaintenanceRequest> findByBookingId(UUID bookingId);
     List<MaintenanceRequest> findByTechnicianId(UUID technicianId);
     List<MaintenanceRequest> findByTechnicianIdAndMaintenanceStatus(UUID technicianId, MaintenanceStatus status);
+    List<MaintenanceRequest> findByMaintenanceStatus(MaintenanceStatus status);
 }
