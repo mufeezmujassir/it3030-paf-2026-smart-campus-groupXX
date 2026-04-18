@@ -11,7 +11,7 @@ const OTPVerification = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const inputRefs = useRef([]);
-    
+
     // Check URL first, then localStorage
     const [email, setEmail] = useState(searchParams.get('tempEmail') || localStorage.getItem('tempEmail') || '');
     const [qrCodeUrl, setQrCodeUrl] = useState(searchParams.get('qrCodeUrl') || localStorage.getItem('qrCodeUrl') || '');
@@ -46,7 +46,7 @@ const OTPVerification = () => {
 
     const handleChange = (index, value) => {
         if (isNaN(value)) return;
-        
+
         const newOtp = [...otp];
         newOtp[index] = value;
         setOtp(newOtp);
@@ -67,7 +67,7 @@ const OTPVerification = () => {
         e.preventDefault();
         const pastedData = e.clipboardData.getData('text/plain').slice(0, 6).split('');
         if (pastedData.some(isNaN)) return;
-        
+
         const newOtp = [...otp];
         pastedData.forEach((val, i) => {
             if (i < 6) newOtp[i] = val;
@@ -100,7 +100,7 @@ const OTPVerification = () => {
                     <Leaf className="w-6 h-6" />
                     <span className="text-xl font-bold tracking-tight">MapleLink</span>
                 </div>
-                <button 
+                <button
                     onClick={() => navigate('/login')}
                     className="text-sm font-medium border border-gray-200 rounded-md px-4 py-2 hover:bg-gray-50 transition"
                 >
@@ -111,7 +111,7 @@ const OTPVerification = () => {
             {/* Main Content */}
             <main className="flex-1 flex flex-col items-center justify-center -mt-10 p-4">
                 <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 sm:p-12 max-w-md w-full text-center">
-                    
+
                     <div className="w-16 h-16 bg-red-50 text-primary border border-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Shield className="w-8 h-8" />
                     </div>
@@ -133,11 +133,11 @@ const OTPVerification = () => {
                         <div className="mb-8 p-5 bg-orange-50/50 border border-orange-100 rounded-2xl animate-in fade-in slide-in-from-top-4 duration-500">
                             <h3 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wider">First Time Setup</h3>
                             <p className="text-xs text-text-secondary mb-4">Scan this QR code with Google Authenticator to link your account.</p>
-                            
+
                             <div className="bg-white p-3 rounded-xl inline-block border border-orange-100 shadow-sm mb-4">
-                                <img 
-                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrCodeUrl)}`} 
-                                    alt="QR Code" 
+                                <img
+                                    src={`${import.meta.env.VITE_QR_API_URL}?size=160x160&data=${encodeURIComponent(qrCodeUrl)}`}
+                                    alt="QR Code"
                                     className="w-40 h-40"
                                 />
                             </div>
@@ -146,7 +146,7 @@ const OTPVerification = () => {
                                 <p className="text-[10px] font-bold text-text-secondary uppercase">Manual Entry Key</p>
                                 <div className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-orange-100">
                                     <code className="text-xs font-mono font-bold text-primary tracking-widest">{secretKey}</code>
-                                    <button 
+                                    <button
                                         type="button"
                                         onClick={() => {
                                             navigator.clipboard.writeText(secretKey);
@@ -158,8 +158,8 @@ const OTPVerification = () => {
                                     </button>
                                 </div>
                             </div>
-                            
-                            <button 
+
+                            <button
                                 onClick={() => setShowSetup(false)}
                                 className="mt-4 text-xs font-bold text-primary hover:underline underline-offset-4"
                             >
@@ -208,7 +208,7 @@ const OTPVerification = () => {
                         </button>
                     </div>
 
-                    <button 
+                    <button
                         onClick={() => navigate('/login')}
                         className="flex items-center justify-center w-full text-sm font-medium text-gray-500 hover:text-gray-800 transition group"
                     >
@@ -226,8 +226,8 @@ const OTPVerification = () => {
             <footer className="bg-gray-50 py-4 px-6 sm:px-12 flex justify-between items-center text-xs text-gray-500">
                 <p>
                     <span className="font-semibold text-primary inline-flex items-center">
-                        <Leaf className="w-3 h-3 mr-1"/>MapleLink
-                    </span> © 2024 MapleLink Systems. All rights reserved.
+                        <Leaf className="w-3 h-3 mr-1" />MapleLink
+                    </span> © 2026 MapleLink Systems. All rights reserved.
                 </p>
                 <div className="flex space-x-4">
                     <a href="#" className="hover:text-primary">Documentation</a>

@@ -30,7 +30,7 @@ const ResourceForm = ({ initialData = null, onSave, onCancel }) => {
             // Show existing image if editing
             if (initialData.imageUrl) {
                 setImagePreview(initialData.imageUrl.startsWith('/api')
-                    ? `http://localhost:8080${initialData.imageUrl}`
+                    ? `${import.meta.env.VITE_BACKEND_BASE_URL}${initialData.imageUrl}`
                     : initialData.imageUrl);
             }
         }
@@ -73,7 +73,7 @@ const ResourceForm = ({ initialData = null, onSave, onCancel }) => {
         } else {
             setImagePreview(initialData?.imageUrl
                 ? (initialData.imageUrl.startsWith('/api')
-                    ? `http://localhost:8080${initialData.imageUrl}`
+                    ? `${import.meta.env.VITE_BACKEND_BASE_URL}${initialData.imageUrl}`
                     : initialData.imageUrl)
                 : null);
         }

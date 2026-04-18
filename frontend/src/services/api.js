@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: 'http://localhost:8080/api', // Note: backend normally runs on 8080
+    baseURL: import.meta.env.VITE_API_BASE_URL,
 });
 
 // Request interceptor to attach JWT
@@ -32,7 +32,7 @@ api.interceptors.response.use(
                 }
 
                 // Attempt refresh
-                const { data } = await axios.post('http://localhost:8080/api/auth/refresh', {
+                const { data } = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/auth/refresh`, {
                     refreshToken
                 });
 
