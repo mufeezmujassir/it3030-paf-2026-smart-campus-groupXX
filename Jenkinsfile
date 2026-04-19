@@ -70,7 +70,10 @@ pipeline {
             steps {
                 dir('frontend') {
                     sh '''
-                        docker build -t ${FRONTEND_REPO}:${IMAGE_TAG} .
+                        docker build \
+                            --build-arg VITE_API_BASE_URL=https://maplinks.duckdns.org/api \
+                            --build-arg VITE_BACKEND_BASE_URL=https://maplinks.duckdns.org \
+                            -t ${FRONTEND_REPO}:${IMAGE_TAG} .
                         docker tag ${FRONTEND_REPO}:${IMAGE_TAG} ${FRONTEND_REPO}:latest
                     '''
                 }
