@@ -10,7 +10,7 @@ pipeline {
 
         IMAGE_TAG = "${BUILD_NUMBER}"
 
-        APP_HOST = '10.0.0.192'
+        APP_HOST = '13.203.51.131'
         APP_USER = 'ubuntu'
     }
 
