@@ -2,10 +2,10 @@ pipeline {
     agent any
 
     environment {
-        AWS_REGION = 'ap-south-1'
+        AWS_REGION     = 'ap-south-1'
         AWS_ACCOUNT_ID = '992258813186'
 
-        BACKEND_REPO = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/smart-campus-backend"
+        BACKEND_REPO  = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/smart-campus-backend"
         FRONTEND_REPO = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/smart-campus-frontend"
 
         IMAGE_TAG = "${BUILD_NUMBER}"
@@ -29,10 +29,10 @@ pipeline {
                 ]]) {
                     dir('campus-operations-hub') {
                         sh '''
-                            set -e
+                            set -euo pipefail
 
                             SECRET_JSON=$(aws secretsmanager get-secret-value \
-                              --region ${AWS_REGION} \
+                              --region "${AWS_REGION}" \
                               --secret-id smart-campus/prod/backend \
                               --query SecretString \
                               --output text)
@@ -72,8 +72,11 @@ pipeline {
         stage('Frontend Build Check') {
             steps {
                 dir('frontend') {
-                    sh 'npm ci'
-                    sh 'npm run build'
+                    sh '''
+                        set -euo pipefail
+                        npm ci
+                        npm run build
+                    '''
                 }
             }
         }
@@ -85,8 +88,9 @@ pipeline {
                     credentialsId: 'aws-creds'
                 ]]) {
                     sh '''
-                        aws ecr get-login-password --region ${AWS_REGION} \
-                        | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                        set -euo pipefail
+                        aws ecr get-login-password --region "${AWS_REGION}" \
+                          | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
                     '''
                 }
             }
@@ -96,8 +100,9 @@ pipeline {
             steps {
                 dir('campus-operations-hub') {
                     sh '''
-                        docker build -t ${BACKEND_REPO}:${IMAGE_TAG} .
-                        docker tag ${BACKEND_REPO}:${IMAGE_TAG} ${BACKEND_REPO}:latest
+                        set -euo pipefail
+                        docker build -t "${BACKEND_REPO}:${IMAGE_TAG}" .
+                        docker tag "${BACKEND_REPO}:${IMAGE_TAG}" "${BACKEND_REPO}:latest"
                     '''
                 }
             }
@@ -107,8 +112,9 @@ pipeline {
             steps {
                 dir('frontend') {
                     sh '''
-                        docker build -t ${FRONTEND_REPO}:${IMAGE_TAG} .
-                        docker tag ${FRONTEND_REPO}:${IMAGE_TAG} ${FRONTEND_REPO}:latest
+                        set -euo pipefail
+                        docker build -t "${FRONTEND_REPO}:${IMAGE_TAG}" .
+                        docker tag "${FRONTEND_REPO}:${IMAGE_TAG}" "${FRONTEND_REPO}:latest"
                     '''
                 }
             }
@@ -117,52 +123,65 @@ pipeline {
         stage('Push Images to ECR') {
             steps {
                 sh '''
-                    docker push ${BACKEND_REPO}:${IMAGE_TAG}
-                    docker push ${BACKEND_REPO}:latest
-                    docker push ${FRONTEND_REPO}:${IMAGE_TAG}
-                    docker push ${FRONTEND_REPO}:latest
+                    set -euo pipefail
+                    docker push "${BACKEND_REPO}:${IMAGE_TAG}"
+                    docker push "${BACKEND_REPO}:latest"
+                    docker push "${FRONTEND_REPO}:${IMAGE_TAG}"
+                    docker push "${FRONTEND_REPO}:latest"
                 '''
             }
         }
 
         stage('Deploy to App Server') {
-    steps {
-        sshagent(credentials: ['ec2-ssh-key']) {
-            sh """
-                ssh -o StrictHostKeyChecking=no ${APP_USER}@${APP_HOST} <<'EOF'
-                set -e
+            steps {
+                sshagent(credentials: ['ec2-ssh-key']) {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-creds'
+                    ]]) {
+                        sh """
+ssh -o StrictHostKeyChecking=no ${APP_USER}@${APP_HOST} /bin/bash <<EOF
+set -euo pipefail
 
-                mkdir -p ~/smart-campus-deploy
-                cd ~/smart-campus-deploy
+mkdir -p ~/smart-campus-deploy
+cd ~/smart-campus-deploy
 
-                cat > .env.deploy <<EOT
+if [ -f .env.deploy ]; then
+    cp .env.deploy previous_success.env
+fi
+
+cat > .env.deploy <<EOT
 BACKEND_TAG=${IMAGE_TAG}
 FRONTEND_TAG=${IMAGE_TAG}
 EOT
 
-                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
-                aws secretsmanager get-secret-value \
-                  --region ${AWS_REGION} \
-                  --secret-id smart-campus/prod/backend \
-                  --query SecretString \
-                  --output text > secret.json
+aws secretsmanager get-secret-value \\
+  --region ${AWS_REGION} \\
+  --secret-id smart-campus/prod/backend \\
+  --query SecretString \\
+  --output text > secret.json
 
-                jq -r 'to_entries[] | "\\(.key)=\\(.value)"' secret.json > .env.backend
+jq -r 'to_entries[] | "\\(.key)=\\(.value)"' secret.json > .env.backend
 
-                docker compose --env-file .env.deploy pull
-                docker compose --env-file .env.deploy up -d
-                EOF
-            """
+docker compose --env-file .env.deploy pull
+docker compose --env-file .env.deploy up -d
+
+rm -f secret.json
+EOF
+"""
+                    }
+                }
+            }
         }
-    }
-}
 
         stage('Health Check') {
             steps {
                 sh '''
+                    set -euo pipefail
                     sleep 30
-                    curl -k -f https://maplinks.duckdns.org || exit 1
+                    curl -k -f https://maplinks.duckdns.org
                 '''
             }
         }
@@ -171,6 +190,7 @@ EOT
             steps {
                 sshagent(credentials: ['ec2-ssh-key']) {
                     sh '''
+                        set -euo pipefail
                         ssh -o StrictHostKeyChecking=no ${APP_USER}@${APP_HOST} "
                             cd ~/smart-campus-deploy &&
                             cp .env.deploy previous_success.env
@@ -186,6 +206,7 @@ EOT
             echo 'Deployment failed. Rolling back...'
             sshagent(credentials: ['ec2-ssh-key']) {
                 sh '''
+                    set +e
                     ssh -o StrictHostKeyChecking=no ${APP_USER}@${APP_HOST} "
                         cd ~/smart-campus-deploy &&
                         if [ -f previous_success.env ]; then
