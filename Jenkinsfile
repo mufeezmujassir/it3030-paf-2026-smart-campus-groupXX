@@ -29,7 +29,7 @@ pipeline {
                 ]]) {
                     dir('campus-operations-hub') {
                         sh '''
-                            set -euo pipefail
+                            set -eu
 
                             SECRET_JSON=$(aws secretsmanager get-secret-value \
                               --region "${AWS_REGION}" \
@@ -73,7 +73,7 @@ pipeline {
             steps {
                 dir('frontend') {
                     sh '''
-                        set -euo pipefail
+                        set -eu
                         npm ci
                         npm run build
                     '''
@@ -88,9 +88,8 @@ pipeline {
                     credentialsId: 'aws-creds'
                 ]]) {
                     sh '''
-                        set -euo pipefail
-                        aws ecr get-login-password --region "${AWS_REGION}" \
-                          | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+                        set -eu
+                        aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
                     '''
                 }
             }
@@ -100,7 +99,7 @@ pipeline {
             steps {
                 dir('campus-operations-hub') {
                     sh '''
-                        set -euo pipefail
+                        set -eu
                         docker build -t "${BACKEND_REPO}:${IMAGE_TAG}" .
                         docker tag "${BACKEND_REPO}:${IMAGE_TAG}" "${BACKEND_REPO}:latest"
                     '''
@@ -112,7 +111,7 @@ pipeline {
             steps {
                 dir('frontend') {
                     sh '''
-                        set -euo pipefail
+                        set -eu
                         docker build -t "${FRONTEND_REPO}:${IMAGE_TAG}" .
                         docker tag "${FRONTEND_REPO}:${IMAGE_TAG}" "${FRONTEND_REPO}:latest"
                     '''
@@ -123,7 +122,7 @@ pipeline {
         stage('Push Images to ECR') {
             steps {
                 sh '''
-                    set -euo pipefail
+                    set -eu
                     docker push "${BACKEND_REPO}:${IMAGE_TAG}"
                     docker push "${BACKEND_REPO}:latest"
                     docker push "${FRONTEND_REPO}:${IMAGE_TAG}"
@@ -141,7 +140,7 @@ pipeline {
                     ]]) {
                         sh """
 ssh -o StrictHostKeyChecking=no ${APP_USER}@${APP_HOST} /bin/bash <<EOF
-set -euo pipefail
+set -eu
 
 mkdir -p ~/smart-campus-deploy
 cd ~/smart-campus-deploy
@@ -179,7 +178,7 @@ EOF
         stage('Health Check') {
             steps {
                 sh '''
-                    set -euo pipefail
+                    set -eu
                     sleep 30
                     curl -k -f https://maplinks.duckdns.org
                 '''
@@ -190,7 +189,7 @@ EOF
             steps {
                 sshagent(credentials: ['ec2-ssh-key']) {
                     sh '''
-                        set -euo pipefail
+                        set -eu
                         ssh -o StrictHostKeyChecking=no ${APP_USER}@${APP_HOST} "
                             cd ~/smart-campus-deploy &&
                             cp .env.deploy previous_success.env
