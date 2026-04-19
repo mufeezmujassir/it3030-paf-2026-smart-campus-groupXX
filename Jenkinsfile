@@ -126,34 +126,37 @@ pipeline {
         }
 
         stage('Deploy to App Server') {
-            steps {
-                sshagent(credentials: ['ec2-ssh-key']) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no ${APP_USER}@${APP_HOST} "
-                            mkdir -p ~/smart-campus-deploy &&
-                            cd ~/smart-campus-deploy &&
+    steps {
+        sshagent(credentials: ['ec2-ssh-key']) {
+            sh """
+                ssh -o StrictHostKeyChecking=no ${APP_USER}@${APP_HOST} <<'EOF'
+                set -e
 
-                            echo BACKEND_TAG=${IMAGE_TAG} > .env.deploy &&
-                            echo FRONTEND_TAG=${IMAGE_TAG} >> .env.deploy &&
+                mkdir -p ~/smart-campus-deploy
+                cd ~/smart-campus-deploy
 
-                            aws ecr get-login-password --region ${AWS_REGION} \
-                            | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com &&
+                cat > .env.deploy <<EOT
+BACKEND_TAG=${IMAGE_TAG}
+FRONTEND_TAG=${IMAGE_TAG}
+EOT
 
-                            aws secretsmanager get-secret-value \
-                              --region ${AWS_REGION} \
-                              --secret-id smart-campus/prod/backend \
-                              --query SecretString \
-                              --output text > secret.json &&
+                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
-                            jq -r 'to_entries | .[] | \"\\(.key)=\\(.value)\"' secret.json > .env.backend &&
+                aws secretsmanager get-secret-value \
+                  --region ${AWS_REGION} \
+                  --secret-id smart-campus/prod/backend \
+                  --query SecretString \
+                  --output text > secret.json
 
-                            docker compose --env-file .env.deploy pull &&
-                            docker compose --env-file .env.deploy up -d
-                        "
-                    '''
-                }
-            }
+                jq -r 'to_entries[] | "\\(.key)=\\(.value)"' secret.json > .env.backend
+
+                docker compose --env-file .env.deploy pull
+                docker compose --env-file .env.deploy up -d
+                EOF
+            """
         }
+    }
+}
 
         stage('Health Check') {
             steps {
