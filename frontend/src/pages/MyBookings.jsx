@@ -64,7 +64,7 @@ const QRCodeModal = ({ booking, resource, user, onClose }) => {
     ].filter(line => line !== null).join('\n');
 
     const encodedPayload = encodeURIComponent(payload);
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=10&data=${encodedPayload}`;
+    const qrUrl = `${import.meta.env.VITE_QR_API_URL}?size=280x280&margin=10&data=${encodedPayload}`;
 
     const handleDownload = async () => {
         try {

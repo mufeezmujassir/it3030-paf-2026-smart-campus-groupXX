@@ -6,6 +6,7 @@ import com.smartcampus.operations.entity.User;
 import com.smartcampus.operations.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -18,13 +19,19 @@ public class AdminInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${app.admin.email:admin@campus.com}")
+    private String adminEmail;
+
+    @Value("${app.admin.password:admin123}")
+    private String adminPassword;
+
     @Override
     public void run(String... args) {
         if (!userRepository.existsByRole(Role.ADMIN)) {
             User admin = User.builder()
                     .fullName("System Administrator")
-                    .email("admin@campus.com")
-                    .password(passwordEncoder.encode("admin123"))
+                    .email(adminEmail)
+                    .password(passwordEncoder.encode(adminPassword))
                     .authProvider(AuthProvider.LOCAL)
                     .role(Role.ADMIN)
                     .department("Administration")
@@ -36,8 +43,8 @@ public class AdminInitializer implements CommandLineRunner {
             userRepository.save(admin);
             log.info("========================================");
             log.info("  DEFAULT ADMIN USER CREATED");
-            log.info("  Email:    admin@campus.com");
-            log.info("  Password: admin123");
+            log.info("  Email:    {}", adminEmail);
+            log.info("  Password: [SET VIA app.admin.password]");
             log.info("  CHANGE THIS IN PRODUCTION!");
             log.info("========================================");
         } else {

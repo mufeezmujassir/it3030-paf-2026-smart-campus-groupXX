@@ -44,9 +44,13 @@ public class NotificationController {
     }
 
     @PatchMapping("/{id}/read")
-    public ResponseEntity<Void> markAsRead(@PathVariable UUID id) {
+    public ResponseEntity<Void> markAsRead(@PathVariable UUID id,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        User user = userRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
         Notification notification = notificationRepository.findById(id).orElse(null);
-        if (notification != null) {
+        if (notification != null && notification.getUserId().equals(user.getId())) {
             notification.setIsRead(true);
             notificationRepository.save(notification);
         }

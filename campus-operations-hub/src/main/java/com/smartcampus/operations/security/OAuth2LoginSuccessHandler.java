@@ -25,6 +25,9 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 
     private final AuthService authService;
 
+    @org.springframework.beans.factory.annotation.Value("${app.frontend.url:http://localhost:5173}")
+    private String frontendUrl;
+
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws IOException, ServletException {
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
@@ -44,13 +47,13 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 
             String targetUrl;
             if (authResponse.isRequiresOtp()) {
-                targetUrl = UriComponentsBuilder.fromUriString("http://localhost:5173/otp")
+                targetUrl = UriComponentsBuilder.fromUriString(frontendUrl + "/otp")
                         .queryParam("tempEmail", URLEncoder.encode(email, StandardCharsets.UTF_8))
                         .queryParam("secretKey", authResponse.getSecretKey())
                         .queryParam("qrCodeUrl", URLEncoder.encode(authResponse.getQrCodeUrl(), StandardCharsets.UTF_8))
                         .build().toUriString();
             } else {
-                targetUrl = UriComponentsBuilder.fromUriString("http://localhost:5173/oauth2/redirect")
+                targetUrl = UriComponentsBuilder.fromUriString(frontendUrl + "/oauth2/redirect")
                         .queryParam("token", authResponse.getAccessToken())
                         .queryParam("refreshToken", authResponse.getRefreshToken())
                         .queryParam("role", authResponse.getRole())
@@ -65,7 +68,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
             String errorMessage = (e.getMessage() != null && !e.getMessage().isEmpty()) 
                     ? e.getMessage() : "Authentication failed";
             
-            String errorUrl = UriComponentsBuilder.fromUriString("http://localhost:5173/oauth2/redirect")
+            String errorUrl = UriComponentsBuilder.fromUriString(frontendUrl + "/oauth2/redirect")
                     .queryParam("error", errorMessage)
                     .build().toUriString();
             getRedirectStrategy().sendRedirect(request, response, errorUrl);
