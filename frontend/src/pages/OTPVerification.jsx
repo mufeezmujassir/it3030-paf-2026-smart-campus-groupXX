@@ -197,17 +197,6 @@ const OTPVerification = () => {
                         </button>
                     </form>
 
-                    <div className="flex space-x-4 mb-8">
-                        <button className="flex-1 py-2.5 flex items-center justify-center border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
-                            <RefreshCw className="w-4 h-4 mr-2 text-gray-500" />
-                            Resend Code
-                        </button>
-                        <button className="flex-1 py-2.5 flex items-center justify-center border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
-                            <Key className="w-4 h-4 mr-2 text-gray-500" />
-                            Backup Code
-                        </button>
-                    </div>
-
                     <button 
                         onClick={() => navigate('/login')}
                         className="flex items-center justify-center w-full text-sm font-medium text-gray-500 hover:text-gray-800 transition group"

@@ -117,7 +117,7 @@ const Login = () => {
                                 <input
                                     name="email"
                                     type="email"
-                                    placeholder="e.g. admin@campus.com"
+                                    placeholder="Enter your email"
                                     value={credentials.email}
                                     onChange={handleChange}
                                     required

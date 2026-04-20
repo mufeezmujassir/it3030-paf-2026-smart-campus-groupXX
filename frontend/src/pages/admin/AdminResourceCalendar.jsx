@@ -1,4 +1,5 @@
 // src/pages/admin/AdminResourceCalendar.jsx
+
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Calendar, ChevronLeft, ChevronRight, Loader2,
@@ -9,7 +10,7 @@ import api from '../../services/api';
 import { toast } from 'react-toastify';
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isBefore, startOfDay } from 'date-fns';
 
-const AdminResourceCalendar = () => {
+const AdminResourceCalendar = ({ isEmbedded = false }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [resources, setResources] = useState([]);
     const [bookingsData, setBookingsData] = useState({});
@@ -111,22 +112,39 @@ const AdminResourceCalendar = () => {
         }
     };
 
-    const isDatePast = (date) => {
-        const todayDate = startOfDay(new Date());
-        const checkDate = startOfDay(date);
-        return isBefore(checkDate, todayDate);
+    // ─── FIXED: Check if booking day has passed (including time for today) ───
+    const isBookingDayPassed = (date) => {
+        const todayDate = new Date();
+        const checkDate = new Date(date);
+
+        // If date is before today, definitely passed
+        if (isBefore(startOfDay(checkDate), startOfDay(todayDate))) {
+            return true;
+        }
+
+        // If it's today, check if current time is past 5 PM (end of booking hours)
+        if (format(checkDate, 'yyyy-MM-dd') === format(todayDate, 'yyyy-MM-dd')) {
+            const currentHour = todayDate.getHours();
+            const currentMinute = todayDate.getMinutes();
+            // Booking hours end at 5:00 PM (17:00)
+            if (currentHour > 17 || (currentHour === 17 && currentMinute > 0)) {
+                return true;
+            }
+        }
+
+        return false;
     };
 
     const isToday = (date) => {
         return format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
     };
 
-    // Replace getResourceStatusForDate function:
+    // ─── FIXED: Updated getResourceStatusForDate with time check ───
     const getResourceStatusForDate = (resource, date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        const isPast = isDatePast(date);
+        const isPast = isBookingDayPassed(date);
 
-        // ── Check maintenance FIRST — even past dates can be under maintenance ──
+        // ── Check maintenance FIRST ──
         if (resource.maintenanceMode === true && resource.maintenanceStartDate && resource.maintenanceEndDate) {
             let startDate, endDate;
             if (Array.isArray(resource.maintenanceStartDate)) {
@@ -136,7 +154,6 @@ const AdminResourceCalendar = () => {
                 startDate = new Date(resource.maintenanceStartDate + 'T00:00:00');
                 endDate   = new Date(resource.maintenanceEndDate   + 'T00:00:00');
             }
-            // Normalize date to midnight for fair comparison
             const checkDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
             if (checkDate >= startDate && checkDate <= endDate) {
                 return {
@@ -151,7 +168,7 @@ const AdminResourceCalendar = () => {
             }
         }
 
-        // ── Past date (after maintenance check) ──────────────────────────────
+        // ── Past date or past booking hours today ──
         if (isPast) {
             const resourceBookings = bookingsData[resource.id]?.[dateStr] || [];
             const approvedCount = resourceBookings.filter(b => b.status === 'APPROVED').length;
@@ -169,11 +186,13 @@ const AdminResourceCalendar = () => {
                 label: 'Past Date',
                 color: 'bg-gray-200 text-gray-500 border-gray-300',
                 icon: <Ban className="w-4 h-4" />,
-                tooltip: 'This date has passed',
+                tooltip: isToday(date)
+                    ? "Today's booking hours have ended (after 5:00 PM)"
+                    : 'This date has passed',
             };
         }
 
-        // ── Inactive resource ─────────────────────────────────────────────────
+        // ── Inactive resource ──
         if (resource.status !== 'ACTIVE') {
             return {
                 status: 'inactive',
@@ -184,7 +203,7 @@ const AdminResourceCalendar = () => {
             };
         }
 
-        // ── Future dates: check booking counts ───────────────────────────────
+        // ── Future dates or today before 5 PM: check booking counts ──
         const resourceBookings = bookingsData[resource.id]?.[dateStr] || [];
         const approvedCount  = resourceBookings.filter(b => b.status === 'APPROVED').length;
         const pendingCount   = resourceBookings.filter(b => b.status === 'PENDING').length;
@@ -225,9 +244,10 @@ const AdminResourceCalendar = () => {
         };
     };
 
+    // ─── FIXED: Updated handleCellClick with time check ───
     const handleCellClick = async (resource, date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        const isPast = isDatePast(date);
+        const isPast = isBookingDayPassed(date);
 
         try {
             const response = await api.get('/bookings', {
@@ -283,7 +303,6 @@ const AdminResourceCalendar = () => {
         toast.success('Report exported successfully');
     };
 
-    // Replace summaryStats object:
     const summaryStats = {
         totalResources: resources.length,
         activeResources: resources.filter(r => r.status === 'ACTIVE').length,
@@ -291,60 +310,61 @@ const AdminResourceCalendar = () => {
             const todayStr = format(new Date(), 'yyyy-MM-dd');
             return sum + (resourceBookings[todayStr]?.filter(b => b.status === 'APPROVED').length || 0);
         }, 0),
-        // Safe check — maintenanceMode might come as boolean true/false or be absent
         maintenanceResources: resources.filter(r => r.maintenanceMode === true).length,
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-            <div className="max-w-full mx-auto p-6 space-y-6">
+        <div className={isEmbedded ? "" : "min-h-screen bg-gradient-to-br from-background via-background to-primary/5"}>
+            <div className={isEmbedded ? "" : "max-w-full mx-auto p-6 space-y-6"}>
 
-                {/* Header */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-white to-primary/5">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                                    <Calendar className="w-5 h-5 text-primary" />
+                {/* Header - only show if NOT embedded */}
+                {!isEmbedded && (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-white to-primary/5">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                        <Calendar className="w-5 h-5 text-primary" />
+                                    </div>
+                                    <div>
+                                        <h1 className="text-2xl font-bold text-text-primary">Resource Utilization Calendar</h1>
+                                        <p className="text-sm text-text-secondary mt-0.5">
+                                            View all resource bookings across dates — identify usage patterns and availability
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h1 className="text-2xl font-bold text-text-primary">Resource Utilization Calendar</h1>
-                                    <p className="text-sm text-text-secondary mt-0.5">
-                                        View all resource bookings across dates — identify usage patterns and availability
-                                    </p>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={exportToCSV}
+                                        className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-200 transition"
+                                    >
+                                        <Download className="w-4 h-4" /> Export Report
+                                    </button>
                                 </div>
                             </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={exportToCSV}
-                                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-200 transition"
-                                >
-                                    <Download className="w-4 h-4" /> Export Report
-                                </button>
+                        </div>
+
+                        {/* Summary Stats */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6 bg-gray-50/30">
+                            <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
+                                <p className="text-2xl font-bold text-text-primary">{summaryStats.totalResources}</p>
+                                <p className="text-xs text-text-secondary">Total Resources</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
+                                <p className="text-2xl font-bold text-emerald-600">{summaryStats.activeResources}</p>
+                                <p className="text-xs text-text-secondary">Active Resources</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
+                                <p className="text-2xl font-bold text-blue-600">{summaryStats.totalBookingsToday}</p>
+                                <p className="text-xs text-text-secondary">Bookings Today</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
+                                <p className="text-2xl font-bold text-purple-600">{summaryStats.maintenanceResources}</p>
+                                <p className="text-xs text-text-secondary">Under Maintenance</p>
                             </div>
                         </div>
                     </div>
-
-                    {/* Summary Stats */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6 bg-gray-50/30">
-                        <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
-                            <p className="text-2xl font-bold text-text-primary">{summaryStats.totalResources}</p>
-                            <p className="text-xs text-text-secondary">Total Resources</p>
-                        </div>
-                        <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
-                            <p className="text-2xl font-bold text-emerald-600">{summaryStats.activeResources}</p>
-                            <p className="text-xs text-text-secondary">Active Resources</p>
-                        </div>
-                        <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
-                            <p className="text-2xl font-bold text-blue-600">{summaryStats.totalBookingsToday}</p>
-                            <p className="text-xs text-text-secondary">Bookings Today</p>
-                        </div>
-                        <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
-                            <p className="text-2xl font-bold text-purple-600">{summaryStats.maintenanceResources}</p>
-                            <p className="text-xs text-text-secondary">Under Maintenance</p>
-                        </div>
-                    </div>
-                </div>
+                )}
 
                 {/* Legend */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
@@ -360,7 +380,7 @@ const AdminResourceCalendar = () => {
                         <div className="flex items-center gap-2"><div className="w-4 h-4 bg-gray-200 border border-gray-300 rounded"></div><span className="text-xs text-text-secondary">Past Date (no bookings)</span></div>
                         <div className="flex items-center gap-2">
                             <div className="w-4 h-4 bg-gradient-to-r from-primary/20 to-primary/40 rounded border border-primary/50"></div>
-                            <span className="text-xs font-semibold text-primary">Today</span>
+                            <span className="text-xs font-semibold text-primary">Today (before 5 PM)</span>
                         </div>
                     </div>
                 </div>
@@ -402,25 +422,33 @@ const AdminResourceCalendar = () => {
                                     </th>
                                     {daysInMonth.map((day, idx) => {
                                         const isTodayDate = isToday(day);
+                                        const isPastDay = isBookingDayPassed(day);
                                         return (
                                             <th
                                                 key={idx}
                                                 id={`today-column-${format(day, 'yyyy-MM-dd')}`}
                                                 className={`px-2 py-3 text-center text-xs font-bold uppercase tracking-wider border-b min-w-[95px] transition-all ${
-                                                    isTodayDate
+                                                    isTodayDate && !isPastDay
                                                         ? 'bg-primary/15 text-primary border-primary/30 shadow-inner'
-                                                        : 'bg-gray-50 text-text-secondary border-gray-200'
+                                                        : isTodayDate && isPastDay
+                                                            ? 'bg-gray-200 text-gray-500 border-gray-300'
+                                                            : 'bg-gray-50 text-text-secondary border-gray-200'
                                                 }`}
                                             >
                                                 <div>{format(day, 'EEE')}</div>
                                                 <div className={`text-sm font-bold mt-1 ${
-                                                    isTodayDate ? 'text-primary text-base' : 'text-text-primary'
+                                                    isTodayDate && !isPastDay ? 'text-primary text-base' : 'text-text-primary'
                                                 }`}>
                                                     {format(day, 'd')}
                                                 </div>
-                                                {isTodayDate && (
+                                                {isTodayDate && !isPastDay && (
                                                     <div className="text-[8px] font-bold text-primary mt-0.5 uppercase tracking-wider">
                                                         Today
+                                                    </div>
+                                                )}
+                                                {isTodayDate && isPastDay && (
+                                                    <div className="text-[8px] font-bold text-gray-500 mt-0.5 uppercase tracking-wider">
+                                                        Day Ended
                                                     </div>
                                                 )}
                                             </th>
@@ -446,17 +474,18 @@ const AdminResourceCalendar = () => {
                                         {daysInMonth.map((day, idx) => {
                                             const status = getResourceStatusForDate(resource, day);
                                             const isTodayDate = isToday(day);
+                                            const isPastDay = isBookingDayPassed(day);
                                             return (
                                                 <td
                                                     key={idx}
                                                     onClick={() => handleCellClick(resource, day)}
                                                     className={`px-2 py-2 text-center cursor-pointer transition-all hover:scale-105 ${
-                                                        isTodayDate ? 'bg-primary/5' : ''
+                                                        isTodayDate && !isPastDay ? 'bg-primary/5' : ''
                                                     }`}
                                                     title={status.tooltip}
                                                 >
                                                     <div className={`p-2 rounded-lg border ${status.color} flex flex-col items-center gap-1 min-w-[75px] ${
-                                                        isTodayDate ? 'ring-1 ring-primary/50 shadow-sm' : ''
+                                                        isTodayDate && !isPastDay ? 'ring-1 ring-primary/50 shadow-sm' : ''
                                                     }`}>
                                                         {status.icon}
                                                         <span className="text-[10px] font-semibold text-center">{status.label}</span>
@@ -511,7 +540,9 @@ const AdminResourceCalendar = () => {
                                     <div>
                                         <p className="text-xs font-semibold text-gray-600">Historical Data</p>
                                         <p className="text-xs text-gray-500">
-                                            This date has already passed. These bookings are for historical reference only.
+                                            {format(new Date(selectedDateStr), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+                                                ? "Today's booking hours have ended (5:00 PM). These bookings are for reference only."
+                                                : "This date has already passed. These bookings are for historical reference only."}
                                         </p>
                                     </div>
                                 </div>
