@@ -26,4 +26,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     long countByRole(Role role);
 
     long countByCreatedAtAfter(java.time.LocalDateTime date);
+
+    Optional<User> findByRefreshToken(String refreshToken);
 }

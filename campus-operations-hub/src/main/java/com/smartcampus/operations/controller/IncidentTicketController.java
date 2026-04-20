@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
@@ -47,6 +48,7 @@ public class IncidentTicketController {
     }
 
     @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('ADMIN', 'TECHNICIAN')")
     public ResponseEntity<TicketResponse> updateStatus(
             @PathVariable UUID id,
             @Valid @RequestBody TicketStatusUpdateRequest request,
@@ -55,6 +57,7 @@ public class IncidentTicketController {
     }
 
     @PostMapping("/{id}/assign")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<TicketResponse> assignTicket(
             @PathVariable UUID id,
             @Valid @RequestBody TicketAssignRequest request,
@@ -63,6 +66,7 @@ public class IncidentTicketController {
     }
 
     @PatchMapping("/{id}/reject")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<TicketResponse> rejectTicket(
             @PathVariable UUID id,
             @Valid @RequestBody TicketRejectRequest request,
@@ -71,6 +75,7 @@ public class IncidentTicketController {
     }
 
     @PutMapping("/{id}/resolution")
+    @PreAuthorize("hasAnyRole('ADMIN', 'TECHNICIAN')")
     public ResponseEntity<TicketResponse> addResolution(
             @PathVariable UUID id,
             @Valid @RequestBody TicketResolutionRequest request,
@@ -87,6 +92,7 @@ public class IncidentTicketController {
     }
 
     @PostMapping("/{id}/auto-assign")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<TicketResponse> autoAssign(
             @PathVariable UUID id,
             @AuthenticationPrincipal UserDetails userDetails) {
@@ -94,11 +100,13 @@ public class IncidentTicketController {
     }
 
     @GetMapping("/technicians")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<com.smartcampus.operations.dto.TechnicianResponse>> getTechnicians() {
         return ResponseEntity.ok(ticketService.getAvailableTechnicians());
     }
 
     @PatchMapping("/{id}/technician-reject")
+    @PreAuthorize("hasRole('TECHNICIAN')")
     public ResponseEntity<TicketResponse> technicianReject(
             @PathVariable UUID id,
             @Valid @RequestBody TicketRejectRequest request,

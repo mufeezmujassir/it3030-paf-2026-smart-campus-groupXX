@@ -230,9 +230,7 @@ public class AuthServiceImpl implements AuthService {
         String refreshToken = request.getRefreshToken();
 
         // Find user with this refresh token
-        User user = userRepository.findAll().stream()
-                .filter(u -> refreshToken.equals(u.getRefreshToken()))
-                .findFirst()
+        User user = userRepository.findByRefreshToken(refreshToken)
                 .orElseThrow(() -> new InvalidCredentialsException("Invalid refresh token"));
 
         // Check expiry
