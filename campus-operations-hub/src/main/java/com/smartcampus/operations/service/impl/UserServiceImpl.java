@@ -124,6 +124,7 @@ public class UserServiceImpl implements UserService {
                 String designation = getCellStringValue(row, columnMap.getOrDefault("designation", -1));
                 String techSpec = getCellStringValue(row, columnMap.getOrDefault("technicianspecialization", -1));
                 String expYearsStr = getCellStringValue(row, columnMap.getOrDefault("experienceyears", -1));
+                String gender = getCellStringValue(row, columnMap.getOrDefault("gender", -1));
 
                 // --- Validate row ---
                 String validationError = validateRow(
@@ -154,6 +155,7 @@ public class UserServiceImpl implements UserService {
                     request.setRole(roleStr.trim().toUpperCase());
                     request.setDepartment(department);
                     request.setStudentId(studentId);
+                    request.setGender(gender);
                     request.setQualification(qualification);
                     request.setDesignation(designation);
                     request.setTechnicianSpecialization(techSpec != null ? techSpec.trim().toUpperCase() : null);
@@ -372,6 +374,7 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
 
         user.setFullName(request.getFirstName() + " " + request.getLastName());
+        user.setGender(request.getGender());
         user.setDepartment(request.getDepartment());
         user.setStudentId(request.getStudentId());
         user.setQualification(request.getQualification());

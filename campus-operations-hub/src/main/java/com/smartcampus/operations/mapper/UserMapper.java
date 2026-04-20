@@ -15,6 +15,7 @@ public class UserMapper {
                 .fullName(request.getFullName())
                 .email(request.getEmail())
                 .role(Role.valueOf(request.getRole().toUpperCase()))
+                .gender(request.getGender())
                 .authProvider(AuthProvider.GOOGLE) // Non-admin users use Google OAuth
                 .department(request.getDepartment())
                 .qualification(request.getQualification())
@@ -35,6 +36,7 @@ public class UserMapper {
                 .email(user.getEmail())
                 .authProvider(user.getAuthProvider().name())
                 .role(user.getRole().name())
+                .gender(user.getGender())
                 .department(user.getDepartment())
                 .qualification(user.getQualification())
                 .designation(user.getDesignation())

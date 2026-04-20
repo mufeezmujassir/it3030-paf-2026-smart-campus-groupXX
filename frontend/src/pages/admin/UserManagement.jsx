@@ -28,7 +28,8 @@ const UserManagement = () => {
         qualification: '',
         designation: '',
         technicianSpecialization: 'IT_SUPPORT',
-        experienceYears: ''
+        experienceYears: '',
+        gender: ''
     });
 
     // Remove Confirmation Modal State
@@ -71,6 +72,7 @@ const UserManagement = () => {
                 email: newUserData.email,
                 role: newUserData.role,
                 department: newUserData.department,
+                gender: newUserData.gender,
                 studentId: newUserData.role === 'STUDENT' ? newUserData.studentId : null,
                 qualification: newUserData.role === 'STAFF' ? newUserData.qualification : null,
                 designation: newUserData.role === 'STAFF' ? newUserData.designation : null,
@@ -85,7 +87,8 @@ const UserManagement = () => {
             setNewUserData({
                 firstName: '', lastName: '', email: '', role: 'STUDENT',
                 department: '', studentId: '', qualification: '', designation: '',
-                technicianSpecialization: 'IT_SUPPORT', experienceYears: ''
+                technicianSpecialization: 'IT_SUPPORT', experienceYears: '',
+                gender: ''
             });
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to register user');
@@ -201,6 +204,7 @@ const UserManagement = () => {
                         else if (normalKey === 'designation') normalized.designation = String(row[key]);
                         else if (normalKey === 'technicianspecialization') normalized.technicianSpecialization = String(row[key]);
                         else if (normalKey === 'experienceyears') normalized.experienceYears = String(row[key]);
+                        else if (normalKey === 'gender') normalized.gender = String(row[key]);
                     });
                     return normalized;
                 });
@@ -616,8 +620,8 @@ const UserManagement = () => {
             {isAddUserModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setIsAddUserModalOpen(false)}></div>
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-300 relative border border-white/20">
-                        <div className="p-8 border-b border-gray-100 flex items-center justify-between bg-primary/[0.02]">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[88vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 relative border border-white/20">
+                        <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-primary/[0.02]">
                             <div className="flex items-center space-x-4">
                                 <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center text-primary">
                                     <UserPlus size={24} />
@@ -632,7 +636,7 @@ const UserManagement = () => {
                             </button>
                         </div>
 
-                        <form onSubmit={handleCreateUser} className="p-8 space-y-6">
+                        <form onSubmit={handleCreateUser} className="p-5 space-y-4 overflow-y-auto flex-1">
                             <div className="grid grid-cols-2 gap-5">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">First Name</label>
@@ -663,6 +667,22 @@ const UserManagement = () => {
                                     <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Department / Unit</label>
                                     <input type="text" value={newUserData.department} onChange={e => setNewUserData({...newUserData, department: e.target.value})} placeholder="e.g. Engineering" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" />
                                 </div>
+                            </div>
+
+                            {/* Gender field */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Gender</label>
+                                <select
+                                    value={newUserData.gender}
+                                    onChange={e => setNewUserData({ ...newUserData, gender: e.target.value })}
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                                >
+                                    <option value="">Select gender</option>
+                                    <option value="MALE">Male</option>
+                                    <option value="FEMALE">Female</option>
+                                    <option value="OTHER">Other</option>
+                                    <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+                                </select>
                             </div>
 
                             {/* Dynamic Role-Based Fields */}
@@ -821,7 +841,7 @@ const UserManagement = () => {
                                     <div className="p-5 bg-gray-50 border border-gray-100 rounded-2xl space-y-3">
                                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Expected Excel Columns</p>
                                         <div className="grid grid-cols-3 gap-2">
-                                            {['fullName *', 'email *', 'role *', 'department', 'studentId', 'qualification', 'designation', 'technicianSpecialization', 'experienceYears'].map(col => (
+                                            {['fullName *', 'email *', 'role *', 'department', 'gender', 'studentId', 'qualification', 'designation', 'technicianSpecialization', 'experienceYears'].map(col => (
                                                 <div key={col} className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold ${
                                                     col.includes('*') ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-white text-gray-500 border border-gray-100'
                                                 }`}>
@@ -873,6 +893,7 @@ const UserManagement = () => {
                                                     <th className="px-4 py-3 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Email</th>
                                                     <th className="px-4 py-3 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Role</th>
                                                     <th className="px-4 py-3 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Department</th>
+                                                    <th className="px-4 py-3 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Gender</th>
                                                     <th className="px-4 py-3 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Issues</th>
                                                 </tr>
                                                 </thead>
@@ -904,6 +925,7 @@ const UserManagement = () => {
                                                                     </span>
                                                             </td>
                                                             <td className="px-4 py-3 text-xs text-text-secondary">{row.department || '—'}</td>
+                                                            <td className="px-4 py-3 text-xs text-text-secondary">{row.gender || '—'}</td>
                                                             <td className="px-4 py-3">
                                                                 {rowErrors.length > 0 && (
                                                                     <div className="space-y-0.5">

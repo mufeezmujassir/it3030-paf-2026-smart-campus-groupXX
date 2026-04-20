@@ -18,6 +18,7 @@ const ProfileSettings = () => {
     const [studentId, setStudentId] = useState('');
     const [technicianSpecialization, setTechnicianSpecialization] = useState('IT_SUPPORT');
     const [experienceYears, setExperienceYears] = useState('');
+    const [gender, setGender] = useState('');
 
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -43,6 +44,7 @@ const ProfileSettings = () => {
             setStudentId(data.studentId || '');
             setTechnicianSpecialization(data.technicianSpecialization || 'IT_SUPPORT');
             setExperienceYears(data.experienceYears || '');
+            setGender(data.gender || '');
 
             setLoading(false);
         } catch (error) {
@@ -57,6 +59,7 @@ const ProfileSettings = () => {
                 firstName,
                 lastName,
                 department,
+                gender,
                 qualification: profileData.role === 'STAFF' ? qualification : null,
                 designation: profileData.role === 'STAFF' ? designation : null,
                 studentId: profileData.role === 'STUDENT' ? studentId : null,
@@ -201,6 +204,22 @@ const ProfileSettings = () => {
                                     </div>
                                 </div>
                             )}
+                        </div>
+
+                        {/* Add this after the department/role grid */}
+                        <div className="space-y-1.5 mb-6">
+                            <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">Gender</label>
+                            <select
+                                value={gender}
+                                onChange={e => setGender(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-xl text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                            >
+                                <option value="">Select gender</option>
+                                <option value="MALE">Male</option>
+                                <option value="FEMALE">Female</option>
+                                <option value="OTHER">Other</option>
+                                <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+                            </select>
                         </div>
 
                         <div className="flex justify-end pt-4 border-t border-gray-50">

@@ -79,7 +79,7 @@ public class AdminUserController {
 
             // Headers
             String[] headers = {
-                    "fullName", "email", "role", "department",
+                    "fullName", "email", "role", "department", "gender",
                     "studentId", "qualification", "designation",
                     "technicianSpecialization", "experienceYears"
             };
