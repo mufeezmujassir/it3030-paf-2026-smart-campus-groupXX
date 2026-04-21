@@ -101,7 +101,7 @@ public class AdminUserController {
 
             // Row 1: STUDENT example
             Row studentRow = sheet.createRow(1);
-            String[] studentData = {"John Doe", "john.doe@university.edu", "STUDENT", "Engineering", "IT21000001", "", "", "", ""};
+            String[] studentData = {"John Doe", "john.doe@university.edu", "STUDENT", "Engineering", "MALE", "IT21000001", "", "", "", ""};
             for (int i = 0; i < studentData.length; i++) {
                 Cell cell = studentRow.createCell(i);
                 cell.setCellValue(studentData[i]);
@@ -110,7 +110,7 @@ public class AdminUserController {
 
             // Row 2: STAFF example
             Row staffRow = sheet.createRow(2);
-            String[] staffData = {"Jane Smith", "jane.smith@university.edu", "STAFF", "Computer Science", "", "PhD", "Senior Lecturer", "", ""};
+            String[] staffData = {"Jane Smith", "jane.smith@university.edu", "STAFF", "Computer Science", "FEMALE", "", "PhD", "Senior Lecturer", "", ""};
             for (int i = 0; i < staffData.length; i++) {
                 Cell cell = staffRow.createCell(i);
                 cell.setCellValue(staffData[i]);
@@ -119,7 +119,7 @@ public class AdminUserController {
 
             // Row 3: TECHNICIAN example
             Row techRow = sheet.createRow(3);
-            String[] techData = {"Mike Johnson", "mike.johnson@university.edu", "TECHNICIAN", "IT Department", "", "", "", "IT_SUPPORT", "5"};
+            String[] techData = {"Mike Johnson", "mike.johnson@university.edu", "TECHNICIAN", "IT Department", "MALE", "", "", "", "IT_SUPPORT", "5"};
             for (int i = 0; i < techData.length; i++) {
                 Cell cell = techRow.createCell(i);
                 cell.setCellValue(techData[i]);
@@ -128,7 +128,7 @@ public class AdminUserController {
 
             // Row 4: ADMIN example
             Row adminRow = sheet.createRow(4);
-            String[] adminData = {"Sarah Admin", "sarah.admin@university.edu", "ADMIN", "Administration", "", "", "", "", ""};
+            String[] adminData = {"Sarah Admin", "sarah.admin@university.edu", "ADMIN", "Administration", "FEMALE", "", "", "", "", ""};
             for (int i = 0; i < adminData.length; i++) {
                 Cell cell = adminRow.createCell(i);
                 cell.setCellValue(adminData[i]);
@@ -155,6 +155,7 @@ public class AdminUserController {
 
             row++;
             instructionsSheet.createRow(row++).createCell(0).setCellValue("Required Columns: fullName, email, role");
+            instructionsSheet.createRow(row++).createCell(0).setCellValue("Optional Columns: department, gender, studentId, qualification, designation, specialization, experience");
             instructionsSheet.createRow(row++).createCell(0).setCellValue("Valid Roles: STUDENT, STAFF, TECHNICIAN, ADMIN");
             row++;
             instructionsSheet.createRow(row++).createCell(0).setCellValue("Role-Specific Required Fields:");
