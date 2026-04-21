@@ -343,28 +343,28 @@ const AdminResourceCalendar = ({ isEmbedded = false }) => {
                                 </div>
                             </div>
                         </div>
-
-                        {/* Summary Stats */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6 bg-gray-50/30">
-                            <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
-                                <p className="text-2xl font-bold text-text-primary">{summaryStats.totalResources}</p>
-                                <p className="text-xs text-text-secondary">Total Resources</p>
-                            </div>
-                            <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
-                                <p className="text-2xl font-bold text-emerald-600">{summaryStats.activeResources}</p>
-                                <p className="text-xs text-text-secondary">Active Resources</p>
-                            </div>
-                            <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
-                                <p className="text-2xl font-bold text-blue-600">{summaryStats.totalBookingsToday}</p>
-                                <p className="text-xs text-text-secondary">Bookings Today</p>
-                            </div>
-                            <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
-                                <p className="text-2xl font-bold text-purple-600">{summaryStats.maintenanceResources}</p>
-                                <p className="text-xs text-text-secondary">Under Maintenance</p>
-                            </div>
-                        </div>
                     </div>
                 )}
+
+                {/* Summary Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6 bg-gray-50/30">
+                    <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
+                        <p className="text-2xl font-bold text-text-primary">{summaryStats.totalResources}</p>
+                        <p className="text-xs text-text-secondary">Total Resources</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
+                        <p className="text-2xl font-bold text-emerald-600">{summaryStats.activeResources}</p>
+                        <p className="text-xs text-text-secondary">Active Resources</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
+                        <p className="text-2xl font-bold text-blue-600">{summaryStats.totalBookingsToday}</p>
+                        <p className="text-xs text-text-secondary">Bookings Today</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
+                        <p className="text-2xl font-bold text-purple-600">{summaryStats.maintenanceResources}</p>
+                        <p className="text-xs text-text-secondary">Under Maintenance</p>
+                    </div>
+                </div>
 
                 {/* Legend */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
