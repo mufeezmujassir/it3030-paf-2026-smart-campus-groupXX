@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAllTickets, deleteTicket } from '../../services/ticketService';
+import SLATimer from '../../components/SLATimer';
 import { useAuth } from '../../context/AuthContext';
 
 const STATUS_STYLES = {
@@ -218,6 +219,14 @@ const TicketList = () => {
                                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${PRIORITY_STYLES[ticket.priority]}`}>
                                         {ticket.priority}
                                     </span>
+                                    {/* SLA Timer compact */}
+                                    {ticket.slaDeadline && (
+                                        <SLATimer
+                                            slaDeadline={ticket.slaDeadline}
+                                            status={ticket.status}
+                                            compact={true}
+                                        />
+                                    )}
                                 </div>
                             </div>
                             <div className="flex justify-between items-center mt-4 pt-3 border-t"

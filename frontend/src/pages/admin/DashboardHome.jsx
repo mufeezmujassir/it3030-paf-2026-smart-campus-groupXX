@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Activity, Users, Ticket, Calendar, AlertCircle, Loader2 } from 'lucide-react';
 import dashboardService from '../../services/dashboardService';
+import { getAllTickets } from '../../services/ticketService';
+import SLATimer from '../../components/SLATimer';
 import {
     ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
     PieChart, Pie, Cell, BarChart, Bar, Legend
@@ -120,8 +123,10 @@ const DashboardHome = () => {
                     </div>
                 </div>
 
-
-            </div></div>
+            </div>
+            {/* SLA Breach Alerts */}
+            <SLABreachPanel />
+        </div>
     );
 };
 
@@ -154,5 +159,120 @@ const TelemetryCard = ({ icon, title, value, status }) => (
         </div>
     </div>
 )
+
+const SLABreachPanel = () => {
+    const [breachedTickets, setBreachedTickets] = useState([]);
+    const [warningTickets, setWarningTickets] = useState([]);
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        getAllTickets().then(res => {
+            const active = res.data.filter(t =>
+                !['CLOSED', 'RESOLVED', 'REJECTED'].includes(t.status) && t.slaDeadline
+            );
+            const now = new Date();
+            const breached = active.filter(t => new Date(t.slaDeadline) < now);
+            const warning = active.filter(t => {
+                const diff = new Date(t.slaDeadline) - now;
+                return diff > 0 && diff < 2 * 60 * 60 * 1000; // under 2 hours
+            });
+            setBreachedTickets(breached);
+            setWarningTickets(warning);
+        }).catch(console.error);
+    }, []);
+
+    if (breachedTickets.length === 0 && warningTickets.length === 0) {
+        return (
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                    ⏱ SLA Monitor
+                </h2>
+                <div className="flex items-center gap-3 p-4 bg-green-50 rounded-xl border border-green-100">
+                    <span className="text-2xl">✅</span>
+                    <div>
+                        <p className="text-sm font-bold text-green-700">All tickets within SLA</p>
+                        <p className="text-xs text-green-600">No breaches or warnings at this time</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                ⏱ SLA Monitor
+                {breachedTickets.length > 0 && (
+                    <span className="text-xs font-bold px-2 py-1 bg-red-100 text-red-600 rounded-full animate-pulse">
+                        {breachedTickets.length} BREACHED
+                    </span>
+                )}
+                {warningTickets.length > 0 && (
+                    <span className="text-xs font-bold px-2 py-1 bg-orange-100 text-orange-600 rounded-full">
+                        {warningTickets.length} WARNING
+                    </span>
+                )}
+            </h2>
+
+            {breachedTickets.length > 0 && (
+                <div className="mb-4">
+                    <p className="text-xs font-bold text-red-600 uppercase tracking-wide mb-2">
+                        🔴 Breached ({breachedTickets.length})
+                    </p>
+                    <div className="space-y-2">
+                        {breachedTickets.map(ticket => (
+                            <div key={ticket.id}
+                                 onClick={() => navigate(`/tickets/${ticket.id}`)}
+                                 className="flex items-center justify-between p-3 bg-red-50 rounded-xl border border-red-100 cursor-pointer hover:shadow-sm transition">
+                                <div>
+                                    <p className="text-sm font-semibold text-red-800">
+                                        {ticket.title}
+                                    </p>
+                                    <p className="text-xs text-red-600">
+                                        📍 {ticket.resourceLocation} • {ticket.priority}
+                                    </p>
+                                </div>
+                                <SLATimer
+                                    slaDeadline={ticket.slaDeadline}
+                                    status={ticket.status}
+                                    compact={true}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {warningTickets.length > 0 && (
+                <div>
+                    <p className="text-xs font-bold text-orange-600 uppercase tracking-wide mb-2">
+                        🟠 Expiring Soon ({warningTickets.length})
+                    </p>
+                    <div className="space-y-2">
+                        {warningTickets.map(ticket => (
+                            <div key={ticket.id}
+                                 onClick={() => navigate(`/tickets/${ticket.id}`)}
+                                 className="flex items-center justify-between p-3 bg-orange-50 rounded-xl border border-orange-100 cursor-pointer hover:shadow-sm transition">
+                                <div>
+                                    <p className="text-sm font-semibold text-orange-800">
+                                        {ticket.title}
+                                    </p>
+                                    <p className="text-xs text-orange-600">
+                                        📍 {ticket.resourceLocation} • {ticket.priority}
+                                    </p>
+                                </div>
+                                <SLATimer
+                                    slaDeadline={ticket.slaDeadline}
+                                    status={ticket.status}
+                                    compact={true}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default DashboardHome;

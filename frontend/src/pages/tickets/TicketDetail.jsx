@@ -8,6 +8,7 @@ import {
 } from '../../services/ticketService';
 import { useAuth } from '../../context/AuthContext';
 import { autoAssignTicket, getAvailableTechnicians, technicianRejectTicket } from '../../services/ticketService';
+import SLATimer from '../../components/SLATimer';
 
 const STATUS_STYLES = {
     OPEN: 'bg-amber-100 text-amber-800 border border-amber-200',
@@ -625,6 +626,14 @@ const TicketDetail = () => {
                                     🗑️ Delete My Ticket
                                 </button>
                             </div>
+                        )}
+
+                        {/* SLA Timer */}
+                        {ticket.slaDeadline && (
+                            <SLATimer
+                                slaDeadline={ticket.slaDeadline}
+                                status={ticket.status}
+                            />
                         )}
 
                         {/* Assignment Details */}
