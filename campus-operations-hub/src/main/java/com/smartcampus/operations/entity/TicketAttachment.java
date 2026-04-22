@@ -33,7 +33,7 @@ public class TicketAttachment {
     private Long fileSize;
 
     @Column(name = "data", nullable = true, columnDefinition = "BYTEA")
-    private byte[] data;
+    private byte[] data; // actual image binary data stored in DB
 
     @Column(name = "uploaded_at", updatable = false)
     private LocalDateTime uploadedAt;

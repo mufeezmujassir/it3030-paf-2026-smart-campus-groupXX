@@ -76,6 +76,9 @@ public class IncidentTicket {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "sla_deadline")
+    private LocalDateTime slaDeadline;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

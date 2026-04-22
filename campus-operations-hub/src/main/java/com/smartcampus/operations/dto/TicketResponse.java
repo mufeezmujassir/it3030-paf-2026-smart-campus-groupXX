@@ -33,4 +33,5 @@ public class TicketResponse {
     private List<CommentResponse> comments;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime slaDeadline;
 }

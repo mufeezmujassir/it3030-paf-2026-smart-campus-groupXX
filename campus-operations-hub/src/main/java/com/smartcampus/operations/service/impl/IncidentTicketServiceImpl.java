@@ -52,11 +52,12 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                 .category(request.getCategory())
                 .description(request.getDescription())
                 .priority(request.getPriority())
-                .status(assignedTechnician != null ? TicketStatus.ASSIGNED : TicketStatus.OPEN)
+                .status(assignedTechnician != null ? TicketStatus.IN_PROGRESS : TicketStatus.OPEN)
                 .resourceLocation(request.getResourceLocation())
                 .preferredContact(request.getPreferredContact())
                 .createdBy(user)
                 .assignedTo(assignedTechnician)
+                .slaDeadline(calculateSlaDeadline(request.getPriority()))  // ← add this
                 .build();
 
         TicketResponse response = mapToResponse(ticketRepository.save(ticket));
@@ -281,6 +282,13 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
             "OTHER", ""
     );
 
+    private static final Map<String, Integer> SLA_HOURS_MAP = Map.of(
+            "CRITICAL", 2,
+            "HIGH", 8,
+            "MEDIUM", 24,
+            "LOW", 72
+    );
+
     @Override
     @Transactional
     public TicketResponse autoAssignTicket(UUID id, String userEmail) {
@@ -433,6 +441,12 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                         .build()).collect(Collectors.toList()))
                 .createdAt(ticket.getCreatedAt())
                 .updatedAt(ticket.getUpdatedAt())
+                .slaDeadline(ticket.getSlaDeadline())
                 .build();
+    }
+
+    private LocalDateTime calculateSlaDeadline(TicketPriority priority) {
+        int hours = SLA_HOURS_MAP.getOrDefault(priority.name(), 24);
+        return LocalDateTime.now().plusHours(hours);
     }
 }
