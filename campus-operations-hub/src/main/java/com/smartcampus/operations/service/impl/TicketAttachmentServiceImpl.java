@@ -95,6 +95,7 @@ public class TicketAttachmentServiceImpl implements TicketAttachmentService {
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
+    //file type check - validation
     private void validateImageFile(MultipartFile file) {
         String contentType = file.getContentType();
         if (contentType == null || !contentType.startsWith("image/")) {

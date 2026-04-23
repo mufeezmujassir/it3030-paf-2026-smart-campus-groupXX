@@ -10,12 +10,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.smartcampus.operations.dto.TechnicianResponse;
 import java.util.Map;
+import java.time.LocalDateTime;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.Comparator;
 
 @Service
 @RequiredArgsConstructor
@@ -39,20 +41,17 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                 : userRepository.findByRoleAndTechnicianSpecializationContainingIgnoreCase(
                 Role.TECHNICIAN, specialization);
 
-        User assignedTechnician = matched.stream().findFirst()
-                .orElseGet(() ->
-                        userRepository.findByRole(Role.TECHNICIAN)
-                                .stream()
-                                .findFirst()
-                                .orElse(null) // null if no technicians exist yet
-                );
+        List<User> matchedList = matched.stream().collect(Collectors.toList());
+        User assignedTechnician = matchedList.isEmpty()
+                ? findLeastLoadedTechnician(userRepository.findByRole(Role.TECHNICIAN))
+                : findLeastLoadedTechnician(matchedList);
 
         IncidentTicket ticket = IncidentTicket.builder()
                 .title(request.getTitle())
                 .category(request.getCategory())
                 .description(request.getDescription())
                 .priority(request.getPriority())
-                .status(assignedTechnician != null ? TicketStatus.IN_PROGRESS : TicketStatus.OPEN)
+                .status(assignedTechnician != null ? TicketStatus.ASSIGNED : TicketStatus.OPEN)
                 .resourceLocation(request.getResourceLocation())
                 .preferredContact(request.getPreferredContact())
                 .createdBy(user)
@@ -154,7 +153,7 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
     public TicketResponse assignTicket(UUID id, TicketAssignRequest request, String userEmail) {
         User admin = getUserByEmail(userEmail);
 
-        if (admin.getRole() != Role.ADMIN) {
+        if (admin.getRole() != Role.ADMIN) {//ownership check only admin can assign ticket
             throw new UnauthorizedTicketAccessException();
         }
 
@@ -308,15 +307,15 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
                 : userRepository.findByRoleAndTechnicianSpecializationContainingIgnoreCase(
                 Role.TECHNICIAN, specialization);
 
-        // Fall back to any available technician
-        User technician = matched.stream().findFirst()
-                .orElseGet(() ->
-                        userRepository.findByRole(Role.TECHNICIAN)
-                                .stream()
-                                .findFirst()
-                                .orElseThrow(() -> new IllegalArgumentException(
-                                        "No technicians available for auto-assignment"))
-                );
+        List<User> candidates = matched.isEmpty()
+                ? userRepository.findByRole(Role.TECHNICIAN)
+                : matched;
+
+        if (candidates.isEmpty()) {
+            throw new IllegalArgumentException("No technicians available for auto-assignment");
+        }
+
+        User technician = findLeastLoadedTechnician(candidates);
 
         ticket.setAssignedTo(technician);
         ticket.setStatus(TicketStatus.ASSIGNED);
@@ -368,6 +367,15 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
         return mapToResponse(ticketRepository.save(ticket));
     }
 
+    private User findLeastLoadedTechnician(List<User> technicians) {
+        return technicians.stream()
+                .min(Comparator.comparingLong(tech ->
+                        ticketRepository.countByAssignedToAndStatusIn(tech,
+                                List.of(TicketStatus.OPEN, TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS))))
+                .orElse(null);
+    }
+
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private User getUserByEmail(String email) {
@@ -388,6 +396,7 @@ public class IncidentTicketServiceImpl implements IncidentTicketService {
         return ticket.getCreatedBy().getId().equals(user.getId());
     }
 
+    // Can't go backwards or skip steps
     private void validateStatusTransition(TicketStatus current, TicketStatus next, User user) {
         if (current == TicketStatus.CLOSED || current == TicketStatus.REJECTED) {
             throw new InvalidStatusTransitionException(current, next);

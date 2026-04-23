@@ -25,6 +25,7 @@ const TechnicianDashboard = () => {
     // Incident Tickets (Team member's module)
     const [tickets, setTickets] = useState([]);
     const [ticketStats, setTicketStats] = useState(null);
+    const [ticketFilter, setTicketFilter] = useState('ALL');
 
     // Maintenance Requests (Your module)
     const [maintenanceRequests, setMaintenanceRequests] = useState([]);
@@ -264,10 +265,15 @@ const TechnicianDashboard = () => {
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <h2 className="text-2xl font-black text-text-primary tracking-tighter">Active Missions</h2>
                                 <div className="flex p-1 bg-surface rounded-2xl border border-gray-100 w-fit">
-                                    {['ALL', 'OPEN', 'IN_PROGRESS', 'RESOLVED'].map(s => (
+                                    {['ALL', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'].map(s => (
                                         <button
                                             key={s}
-                                            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-text-secondary hover:text-primary"
+                                            onClick={() => setTicketFilter(s)}
+                                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                                ticketFilter === s
+                                                    ? 'bg-primary text-white'
+                                                    : 'text-text-secondary hover:text-primary'
+                                            }`}
                                         >
                                             {s.replace('_', ' ')}
                                         </button>
@@ -276,7 +282,9 @@ const TechnicianDashboard = () => {
                             </div>
 
                             <div className="grid grid-cols-1 gap-4">
-                                {tickets.length > 0 ? tickets.slice(0, 5).map(ticket => (
+                                {tickets.length > 0 ?
+                                    (ticketFilter === 'ALL' ? tickets : tickets.filter(t => t.status === ticketFilter))
+                                        .slice(0, 5).map(ticket => (
                                     <div
                                         key={ticket.id}
                                         onClick={() => navigate(`/tickets/${ticket.id}`)}
@@ -303,7 +311,7 @@ const TechnicianDashboard = () => {
                                                 <ArrowRight size={16} className="text-primary group-hover:translate-x-1 transition" />
                                             </div>
                                         </div>
-                                        {ticket.status === 'IN_PROGRESS' && (
+                                        {['ASSIGNED', 'IN_PROGRESS'].includes(ticket.status) && (
                                             <div className="absolute top-0 right-0 w-2 h-2 bg-amber-500 rounded-bl-full animate-pulse"></div>
                                         )}
                                     </div>
