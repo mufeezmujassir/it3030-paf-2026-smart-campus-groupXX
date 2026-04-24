@@ -90,6 +90,13 @@ public class ResourceServiceImpl implements ResourceService {
                         conflicts.size() > 5 ? ", and more..." : ""
                 ));
             }
+
+            // Auto-reject any pending bookings
+            rejectPendingBookingsForResource(
+                    id,
+                    existing.getName(),
+                    "the resource has been taken out of service"
+            );
         }
         // ── End guard ──
 
@@ -149,6 +156,13 @@ public class ResourceServiceImpl implements ResourceService {
                     conflicts.size() > 5 ? ", and more..." : ""
             ));
         }
+
+        // Auto-reject any pending bookings before deletion
+        rejectPendingBookingsForResource(
+                id,
+                resource.getName(),
+                "the resource has been deleted"
+        );
         // ── End guard ──
 
         String resourceName = resource.getName();
@@ -181,5 +195,44 @@ public class ResourceServiceImpl implements ResourceService {
         return resourceRepository.findAll(spec, pageable).map(resourceMapper::toResponse);
     }
 
+    // ── Private helper: auto-reject pending bookings and notify users ──
+    private void rejectPendingBookingsForResource(UUID resourceId, String resourceName, String reason) {
+        LocalDate today = LocalDate.now();
+
+        List<Booking> pendingConflicts = bookingRepository.findByStatus(BookingStatus.PENDING)
+                .stream()
+                .filter(b -> b.getResourceId().equals(resourceId))
+                .filter(b -> !b.getBookingDate().isBefore(today))
+                .toList();
+
+        for (Booking booking : pendingConflicts) {
+            booking.setStatus(BookingStatus.REJECTED);
+            booking.setAdminReason(reason);
+            bookingRepository.save(booking);
+
+            User affectedUser = userRepository.findById(booking.getUserId()).orElse(null);
+            if (affectedUser != null) {
+                notificationService.sendNotification(
+                        affectedUser.getId(),
+                        "Booking Request Cancelled",
+                        String.format("Your pending booking request for %s on %s at %s–%s has been cancelled because %s.",
+                                resourceName,
+                                booking.getBookingDate(),
+                                booking.getStartTime(),
+                                booking.getEndTime(),
+                                reason),
+                        "BOOKING_REJECTED"
+                );
+            }
+
+            log.info("Auto-rejected pending booking {} for resource {} — reason: {}",
+                    booking.getId(), resourceName, reason);
+        }
+
+        if (!pendingConflicts.isEmpty()) {
+            log.info("Auto-rejected {} pending booking(s) for resource {} due to: {}",
+                    pendingConflicts.size(), resourceName, reason);
+        }
+    }
 
 }
