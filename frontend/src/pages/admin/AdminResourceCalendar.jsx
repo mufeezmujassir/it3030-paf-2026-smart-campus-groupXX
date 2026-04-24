@@ -550,11 +550,78 @@ const AdminResourceCalendar = ({ isEmbedded = false }) => {
 
                             {selectedDateBookings.length === 0 ? (
                                 <div className="text-center py-12">
-                                    <CheckCircle className="w-12 h-12 text-green-300 mx-auto mb-3" />
-                                    <p className="text-text-secondary">No bookings for this date</p>
-                                    {!isPastDate && (
-                                        <p className="text-xs text-text-secondary mt-1">This resource is fully available</p>
-                                    )}
+                                    {(() => {
+                                        // Determine the correct context for the empty state
+                                        const dateObj = new Date(selectedDateStr);
+                                        const isInactive = selectedResource.status !== 'ACTIVE';
+
+                                        // Check maintenance
+                                        let isUnderMaintenance = false;
+                                        if (selectedResource.maintenanceMode === true && selectedResource.maintenanceStartDate && selectedResource.maintenanceEndDate) {
+                                            let startDate, endDate;
+                                            if (Array.isArray(selectedResource.maintenanceStartDate)) {
+                                                startDate = new Date(selectedResource.maintenanceStartDate[0], selectedResource.maintenanceStartDate[1] - 1, selectedResource.maintenanceStartDate[2]);
+                                                endDate   = new Date(selectedResource.maintenanceEndDate[0],   selectedResource.maintenanceEndDate[1] - 1,   selectedResource.maintenanceEndDate[2]);
+                                            } else {
+                                                startDate = new Date(selectedResource.maintenanceStartDate + 'T00:00:00');
+                                                endDate   = new Date(selectedResource.maintenanceEndDate   + 'T00:00:00');
+                                            }
+                                            const check = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+                                            isUnderMaintenance = check >= startDate && check <= endDate;
+                                        }
+
+                                        if (isUnderMaintenance) {
+                                            return (
+                                                <>
+                                                    <Wrench className="w-12 h-12 text-purple-300 mx-auto mb-3" />
+                                                    <p className="text-text-secondary font-semibold">Under Maintenance</p>
+                                                    <p className="text-xs text-purple-500 mt-1">
+                                                        {selectedResource.maintenanceReason
+                                                            ? `Reason: ${selectedResource.maintenanceReason}`
+                                                            : 'This resource is currently under maintenance'}
+                                                    </p>
+                                                    <p className="text-xs text-text-secondary mt-1">
+                                                        Maintenance ends: {Array.isArray(selectedResource.maintenanceEndDate)
+                                                        ? `${selectedResource.maintenanceEndDate[0]}-${String(selectedResource.maintenanceEndDate[1]).padStart(2,'0')}-${String(selectedResource.maintenanceEndDate[2]).padStart(2,'0')}`
+                                                        : selectedResource.maintenanceEndDate}
+                                                    </p>
+                                                </>
+                                            );
+                                        }
+
+                                        if (isInactive) {
+                                            return (
+                                                <>
+                                                    <XCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                                                    <p className="text-text-secondary font-semibold">Resource Inactive</p>
+                                                    <p className="text-xs text-text-secondary mt-1">
+                                                        This resource is currently out of service and cannot be booked.
+                                                    </p>
+                                                </>
+                                            );
+                                        }
+
+                                        if (isPastDate) {
+                                            return (
+                                                <>
+                                                    <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                                                    <p className="text-text-secondary font-semibold">No bookings on this date</p>
+                                                    <p className="text-xs text-text-secondary mt-1">
+                                                        This date has passed with no recorded bookings.
+                                                    </p>
+                                                </>
+                                            );
+                                        }
+
+                                        // Only show "fully available" for genuinely available future dates
+                                        return (
+                                            <>
+                                                <CheckCircle className="w-12 h-12 text-green-300 mx-auto mb-3" />
+                                                <p className="text-text-secondary font-semibold">No bookings for this date</p>
+                                                <p className="text-xs text-text-secondary mt-1">This resource is fully available</p>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             ) : (
                                 <div className="space-y-3">
