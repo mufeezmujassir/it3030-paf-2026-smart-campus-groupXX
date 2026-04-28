@@ -82,7 +82,7 @@ MapleLink replaces fragmented paper-based and siloed campus processes with a sin
 | Frontend | React 18 · Vite · Tailwind CSS · Axios · React Router |
 | Database | PostgreSQL via CockroachDB Cloud |
 | Auth | JWT · Google OAuth2 · TOTP (GoogleAuthenticator library) |
-| Build & CI | GitHub Actions (build + test on every push to `main`) |
+| CI/CD | Jenkins · GitHub · Amazon ECR · AWS EC2 · Docker · Docker Compose |
 | API Design | REST + HATEOAS (Richardson Maturity Level 3) |
 | Libraries | Lombok · Apache POI · SheetJS · date-fns · react-toastify · lucide-react |
 
@@ -317,16 +317,72 @@ VITE_GOOGLE_CLIENT_ID=your_google_client_id
 
 ## CI/CD Pipeline
 
-A GitHub Actions workflow runs on every push and pull request to `main`.
+MapleLink uses a fully automated Jenkins pipeline that takes every merge into `main` from source code all the way to a running production deployment on AWS EC2, with health checking and automatic rollback.
 
-**Jobs run in parallel:**
+### Infrastructure
 
-- **Backend** — Sets up JDK 21, runs `mvn clean install` (compiles + all unit/integration tests)
-- **Frontend** — Sets up Node.js 18, runs `npm install` + `npm run build` (verifies React build)
+| Component | Technology |
+|---|---|
+| Automation server | Jenkins |
+| Compute | AWS EC2 |
+| Container registry | Amazon ECR |
+| Networking | AWS VPC + Security Groups |
+| Public endpoint | Elastic IP + DuckDNS |
+| Container runtime | Docker + Docker Compose |
+| Frontend web server | Nginx (Alpine) |
+| Secret management | AWS Secrets Manager |
 
-Both jobs must pass before a PR can be merged into `main`.
+### Pipeline Stages
 
-**Branching strategy:**
+```
+Push / merge to main
+        │
+        ▼
+1. Checkout          — pull latest source from GitHub
+2. Backend Test      — fetch secrets from AWS Secrets Manager → ./mvnw clean test
+3. Frontend Build    — npm ci → npm run build (production bundle verified)
+4. ECR Login         — docker login to Amazon ECR
+5. Build Images      — multi-stage Docker build for backend (JDK 21) and frontend (Node 22 → Nginx)
+6. Tag & Push        — images tagged as <BUILD_NUMBER> and latest → pushed to ECR
+7. Deploy            — SSH into EC2 → write .env.deploy → docker compose pull → docker compose up -d
+8. Health Check      — HTTP check against public DuckDNS URL
+9. Mark Release      — copy current .env.deploy → previous_success.env
+        │
+        ▼ (on failure)
+10. Rollback         — redeploy using previous_success.env image tags
+```
+
+### Docker Image Strategy
+
+**Frontend image** (multi-stage):
+- Builder: `node:22-alpine` — runs `npm ci` + `npm run build`
+- Runtime: `nginx:stable-alpine` — serves the `dist/` folder with a custom `nginx.conf`
+
+**Backend image** (multi-stage):
+- Builder: `eclipse-temurin:21-jdk` — resolves Maven deps + packages the JAR
+- Runtime: `eclipse-temurin:21-jre` — runs `java -jar app.jar`
+
+Every build produces images tagged with `$BUILD_NUMBER` for traceability. The deployment environment file records the exact tags in use, making the deployed version always identifiable.
+
+### Secret Management
+
+Sensitive values are never stored in the repository. Jenkins pulls them from **AWS Secrets Manager** at both test time and deployment time and writes a `.env.backend` file on the production server for Docker Compose injection. Managed values include database credentials, JWT secret, token expiry, Google OAuth client credentials, and Spring Boot production settings.
+
+### Deployment Files on the Server
+
+```
+~/smart-campus-deploy/
+├── docker-compose.yml       # service definitions, ports, networks, env refs
+├── .env.deploy              # current backend + frontend image tags
+├── .env.backend             # runtime env vars from AWS Secrets Manager
+└── previous_success.env     # last known good tags (used for rollback)
+```
+
+### Rollback Strategy
+
+Before every deployment Jenkins preserves the last successful `.env.deploy` as `previous_success.env`. If the new deployment fails — including cases where containers start but the public health check fails — Jenkins automatically SSH's back into the server and re-runs Docker Compose with the previous image tags.
+
+### Branching Strategy
 
 ```
 main          ← production-ready, protected branch (requires PR)
@@ -398,3 +454,7 @@ it3030-paf-2026-smart-campus-groupXX/
 - [SheetJS](https://sheetjs.com/)
 - [GitHub Actions](https://docs.github.com/en/actions)
 - [Richardson Maturity Model (HATEOAS)](https://martinfowler.com/articles/richardsonMaturityModel.html)
+- [Jenkins Documentation](https://www.jenkins.io/doc/)
+- [Amazon ECR](https://docs.aws.amazon.com/ecr/)
+- [Docker Documentation](https://docs.docker.com/)
+- [DuckDNS](https://www.duckdns.org/)
