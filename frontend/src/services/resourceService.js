@@ -38,7 +38,7 @@ export const uploadImage = (file) => {
 export const getImageUrl = (imageUrl) => {
     if (!imageUrl) return null;
     if (imageUrl.startsWith('http')) return imageUrl;
-    return `http://localhost:8080${imageUrl}`;
+    return `${import.meta.env.VITE_BACKEND_BASE_URL}${imageUrl}`;
 };
 
 export default {

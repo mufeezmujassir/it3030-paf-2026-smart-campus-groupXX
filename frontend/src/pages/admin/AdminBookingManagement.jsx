@@ -3,13 +3,14 @@ import React, { useState, useEffect } from 'react';
 import {
     Calendar, Clock, User, Mail, CheckCircle, XCircle, Eye, Building,
     ChevronLeft, ChevronRight, AlertCircle, Loader2, TrendingUp,
-    Filter, X, Wrench, RefreshCw
+    Filter, X, Wrench, RefreshCw, LayoutGrid, Users
 } from 'lucide-react';
 import bookingService from '../../services/bookingService';
 import resourceService from '../../services/resourceService';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 import { format, addDays, subDays, isBefore, startOfDay } from 'date-fns';
+import AdminResourceCalendar from './AdminResourceCalendar';
 
 const AdminBookingManagement = () => {
 
@@ -134,17 +135,16 @@ const AdminBookingManagement = () => {
         setMRProcessing(true);
         try {
             if (selectedMR.maintenanceStatus === 'EXTENSION_REQUESTED') {
-                // Extension approve/reject → maintenance endpoint → set back to IN_PROGRESS
                 await api.patch(`/maintenance/admin/${selectedMR.maintenanceId}`, {
                     status: 'IN_PROGRESS',
                     notes: mrAction.notes || (mrAction.approve
                         ? 'Extension approved — continue maintenance'
                         : 'Extension rejected — please complete by original end date'),
+                    extensionApproved: mrAction.approve
                 });
                 toast.success(`Extension ${mrAction.approve ? 'approved' : 'rejected'} — technician can now mark maintenance as completed.`);
 
             } else if (selectedMR.maintenanceStatus === 'PENDING') {
-                // Initial approval/rejection → booking status endpoint
                 await bookingService.updateBookingStatus(selectedMR.id, {
                     status: mrAction.approve ? 'APPROVED' : 'REJECTED',
                     reason: mrAction.notes,
@@ -313,7 +313,6 @@ const AdminBookingManagement = () => {
         { key: 'CANCELLED',          label: 'Cancelled',         active: 'bg-gray-500 text-white',    inactive: 'bg-gray-100 text-gray-600 hover:bg-gray-200',      count: mrStats.cancelled },
     ];
 
-    // ── Helper to format bookingDate (string or Java array) ───────────────
     const formatBookingDate = (bookingDate) => {
         if (!bookingDate) return '—';
         try {
@@ -364,7 +363,7 @@ const AdminBookingManagement = () => {
                         </div>
                     </div>
 
-                    {/* Tab bar */}
+                    {/* Tab bar - 3 tabs */}
                     <div className="flex border-b border-gray-100">
                         <button
                             onClick={() => setActiveTab('bookings')}
@@ -383,11 +382,17 @@ const AdminBookingManagement = () => {
                                 </span>
                             )}
                         </button>
+                        <button
+                            onClick={() => setActiveTab('calendar')}
+                            className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold border-b-2 transition-all ${activeTab === 'calendar' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                        >
+                            <LayoutGrid className="w-4 h-4" /> Resource Calendar
+                        </button>
                     </div>
                 </div>
 
                 {/* ════════════════════════════════════════════
-                    TAB: BOOKINGS CALENDAR
+                    TAB 1: BOOKINGS CALENDAR
                 ════════════════════════════════════════════ */}
                 {activeTab === 'bookings' && (
                     <>
@@ -479,6 +484,52 @@ const AdminBookingManagement = () => {
                                     </div>
                                 </div>
                                 <div className="p-6">
+
+                                    {/* ── Resource status banner ── */}
+                                    {selectedResource.status !== 'ACTIVE' && (
+                                        <div className="mb-4 flex items-start gap-3 p-4 bg-gray-100 border border-gray-300 rounded-xl">
+                                            <XCircle className="w-5 h-5 text-gray-500 flex-shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="text-sm font-bold text-gray-700">Resource is Out of Service</p>
+                                                <p className="text-xs text-gray-500 mt-0.5">
+                                                    This resource is currently inactive. No new bookings can be made until it is set back to Active.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {selectedResource.maintenanceMode === true && (() => {
+                                        // Check if today falls within the maintenance window
+                                        const today = format(selectedDate, 'yyyy-MM-dd');
+                                        let startDate = selectedResource.maintenanceStartDate;
+                                        let endDate   = selectedResource.maintenanceEndDate;
+
+                                        if (Array.isArray(startDate)) {
+                                            startDate = `${startDate[0]}-${String(startDate[1]).padStart(2,'0')}-${String(startDate[2]).padStart(2,'0')}`;
+                                            endDate   = `${endDate[0]}-${String(endDate[1]).padStart(2,'0')}-${String(endDate[2]).padStart(2,'0')}`;
+                                        }
+
+                                        const isInMaintenanceWindow = today >= startDate && today <= endDate;
+
+                                        if (!isInMaintenanceWindow) return null;
+
+                                        return (
+                                            <div className="mb-4 flex items-start gap-3 p-4 bg-purple-50 border border-purple-200 rounded-xl">
+                                                <Wrench className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="text-sm font-bold text-purple-700">Resource Under Maintenance</p>
+                                                    <p className="text-xs text-purple-600 mt-0.5">
+                                                        {selectedResource.maintenanceReason
+                                                            ? `Reason: ${selectedResource.maintenanceReason}`
+                                                            : 'This resource is currently under scheduled maintenance.'}
+                                                        {' '}Maintenance runs from <strong>{startDate}</strong> to <strong>{endDate}</strong>.
+                                                        Bookings cannot be made during this period.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
                                     {calendarLoading ? (
                                         <div className="flex flex-col items-center justify-center py-16"><Loader2 className="w-10 h-10 text-primary animate-spin mb-3" /><p className="text-text-secondary text-sm">Loading...</p></div>
                                     ) : (
@@ -518,7 +569,20 @@ const AdminBookingManagement = () => {
                                                                                         <p className="text-sm text-text-primary">{booking.issueDescription}</p>
                                                                                     </div>
                                                                                 )}
-                                                                                {booking.purpose && !booking.issueDescription && <div className="mt-2 p-2 bg-gray-50 rounded-lg"><p className="text-sm text-text-primary">📝 {booking.purpose}</p></div>}
+                                                                                {booking.purpose && !booking.issueDescription && (
+                                                                                    <div className="mt-2 p-2 bg-gray-50 rounded-lg">
+                                                                                        <p className="text-sm text-text-primary">📝 {booking.purpose}</p>
+                                                                                    </div>
+                                                                                )}
+                                                                                {/* Expected attendees - Regular bookings only */}
+                                                                                {booking.bookingType !== 'MAINTENANCE' && booking.expectedAttendees && (
+                                                                                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-100 rounded-lg">
+                                                                                        <Users className="w-3.5 h-3.5 text-blue-500" />
+                                                                                        <span className="text-xs font-semibold text-blue-700">
+                                                                                            {booking.expectedAttendees} attendee{booking.expectedAttendees !== 1 ? 's' : ''}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                )}
                                                                                 <p className="text-xs text-text-secondary mt-2">Requested: {format(new Date(booking.createdAt), 'MMM d, h:mm a')}</p>
                                                                             </div>
                                                                         </div>
@@ -561,7 +625,7 @@ const AdminBookingManagement = () => {
                 )}
 
                 {/* ════════════════════════════════════════════
-                    TAB: MAINTENANCE REQUESTS
+                    TAB 2: MAINTENANCE REQUESTS
                 ════════════════════════════════════════════ */}
                 {activeTab === 'maintenance' && (
                     <>
@@ -769,6 +833,13 @@ const AdminBookingManagement = () => {
                     </>
                 )}
 
+                {/* ════════════════════════════════════════════
+                    TAB 3: RESOURCE CALENDAR
+                ════════════════════════════════════════════ */}
+                {activeTab === 'calendar' && (
+                    <AdminResourceCalendar isEmbedded={true} />
+                )}
+
                 {/* ── Booking action modal ── */}
                 {showModal && selectedBooking && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -795,7 +866,24 @@ const AdminBookingManagement = () => {
                                         <p className="text-sm text-text-primary">{selectedBooking.issueDescription}</p>
                                     </div>
                                 )}
-                                {selectedBooking.purpose && <div className="p-4 bg-amber-50 rounded-xl border border-amber-100"><p className="text-xs font-bold text-amber-700 uppercase mb-1">Purpose</p><p className="text-sm text-amber-800">{selectedBooking.purpose}</p></div>}
+                                {selectedBooking.purpose && (
+                                    <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
+                                        <p className="text-xs font-bold text-amber-700 uppercase mb-1">Purpose</p>
+                                        <p className="text-sm text-amber-800">{selectedBooking.purpose}</p>
+                                    </div>
+                                )}
+                                {/* Expected attendees - Regular bookings only */}
+                                {selectedBooking.bookingType !== 'MAINTENANCE' && selectedBooking.expectedAttendees && (
+                                    <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                                        <Users className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                        <div>
+                                            <p className="text-xs font-bold text-blue-700 uppercase">Expected Attendees</p>
+                                            <p className="text-sm font-semibold text-blue-900 mt-0.5">
+                                                {selectedBooking.expectedAttendees} {selectedBooking.expectedAttendees !== 1 ? 'people' : 'person'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                                 {adminAction.status && (
                                     <div>
                                         <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">
@@ -846,27 +934,16 @@ const AdminBookingManagement = () => {
                                 </div>
                             </div>
                             <div className="p-6 space-y-4">
-                                {/* Date / time */}
                                 <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl">
-                                    <div>
-                                        <p className="text-xs font-bold text-text-secondary uppercase">Date</p>
-                                        <p className="text-base font-semibold text-text-primary mt-1">{formatBookingDateLong(selectedMR.bookingDate)}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs font-bold text-text-secondary uppercase">Time</p>
-                                        <p className="text-base font-semibold text-text-primary mt-1">{selectedMR.startTime} – {selectedMR.endTime}</p>
-                                    </div>
+                                    <div><p className="text-xs font-bold text-text-secondary uppercase">Date</p><p className="text-base font-semibold text-text-primary mt-1">{formatBookingDateLong(selectedMR.bookingDate)}</p></div>
+                                    <div><p className="text-xs font-bold text-text-secondary uppercase">Time</p><p className="text-base font-semibold text-text-primary mt-1">{selectedMR.startTime} – {selectedMR.endTime}</p></div>
                                 </div>
-
-                                {/* Issue */}
                                 {selectedMR.issueDescription && (
                                     <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
                                         <p className="text-xs font-bold text-purple-700 uppercase mb-1">Issue</p>
                                         <p className="text-sm text-text-primary">{selectedMR.issueDescription}</p>
                                     </div>
                                 )}
-
-                                {/* Extension details */}
                                 {selectedMR.maintenanceStatus === 'EXTENSION_REQUESTED' && (
                                     <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
                                         <div className="flex items-center gap-2 mb-1">
@@ -884,8 +961,6 @@ const AdminBookingManagement = () => {
                                         </p>
                                     </div>
                                 )}
-
-                                {/* Context banner for initial approval */}
                                 {selectedMR.maintenanceStatus === 'PENDING' && (
                                     <div className={`p-3 rounded-xl border flex items-start gap-2 ${mrAction.approve ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
                                         <AlertCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${mrAction.approve ? 'text-emerald-600' : 'text-rose-600'}`} />
@@ -896,8 +971,6 @@ const AdminBookingManagement = () => {
                                         </p>
                                     </div>
                                 )}
-
-                                {/* Notes */}
                                 <div>
                                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">
                                         Notes {!mrAction.approve ? '(Required)' : '(Optional)'}
@@ -912,20 +985,9 @@ const AdminBookingManagement = () => {
                                 </div>
                             </div>
                             <div className="p-6 border-t border-gray-100 flex gap-3">
-                                <button
-                                    onClick={() => { setShowMRModal(false); setSelectedMR(null); setMRAction({ approve: true, notes: '' }); }}
-                                    className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleMRAction}
-                                    disabled={mrProcessing || (!mrAction.approve && !mrAction.notes)}
-                                    className={`flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition disabled:opacity-50 ${mrAction.approve ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200' : 'bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200'}`}
-                                >
-                                    {mrProcessing
-                                        ? <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                                        : `Confirm ${mrAction.approve ? 'Approval' : 'Rejection'}`}
+                                <button onClick={() => { setShowMRModal(false); setSelectedMR(null); setMRAction({ approve: true, notes: '' }); }} className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+                                <button onClick={handleMRAction} disabled={mrProcessing || (!mrAction.approve && !mrAction.notes)} className={`flex-1 px-4 py-3 rounded-xl text-sm font-semibold text-white transition disabled:opacity-50 ${mrAction.approve ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200' : 'bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200'}`}>
+                                    {mrProcessing ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : `Confirm ${mrAction.approve ? 'Approval' : 'Rejection'}`}
                                 </button>
                             </div>
                         </div>

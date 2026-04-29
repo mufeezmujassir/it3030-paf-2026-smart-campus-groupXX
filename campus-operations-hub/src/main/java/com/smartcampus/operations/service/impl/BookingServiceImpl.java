@@ -6,6 +6,7 @@ import com.smartcampus.operations.entity.*;
 import com.smartcampus.operations.exception.InvalidBookingException;
 import com.smartcampus.operations.exception.ResourceNotFoundException;
 import com.smartcampus.operations.repository.BookingRepository;
+import com.smartcampus.operations.repository.MaintenanceRequestRepository;
 import com.smartcampus.operations.repository.ResourceRepository;
 import com.smartcampus.operations.repository.UserRepository;
 import com.smartcampus.operations.service.BookingService;
@@ -33,6 +34,7 @@ public class BookingServiceImpl implements BookingService {
     private final ResourceRepository resourceRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final MaintenanceRequestRepository maintenanceRequestRepository;
 
     private static final LocalTime START_TIME = LocalTime.of(8, 0);
     private static final LocalTime END_TIME = LocalTime.of(17, 0);
@@ -241,6 +243,52 @@ public class BookingServiceImpl implements BookingService {
 
         log.info("Booking {} status updated from {} to {} by admin {}",
                 bookingId, oldStatus, request.getStatus(), adminEmail);
+
+        // ── Sync MaintenanceRequest if this is a MAINTENANCE booking ──
+        if ("MAINTENANCE".equals(booking.getBookingType())) {
+            maintenanceRequestRepository.findByBookingId(bookingId).ifPresent(maintenanceRequest -> {
+
+                if (request.getStatus() == BookingStatus.APPROVED) {
+                    maintenanceRequest.setMaintenanceStatus(MaintenanceStatus.APPROVED);
+                    maintenanceRequest.setAdminNotes(request.getReason());
+
+                    // Put resource into maintenance mode (same as what MaintenanceServiceImpl.updateMaintenanceStatus does)
+                    Resource res = resourceRepository.findById(booking.getResourceId()).orElse(null);
+                    if (res != null) {
+                        res.setMaintenanceMode(true);
+                        res.setMaintenanceStartDate(booking.getBookingDate());
+                        res.setMaintenanceEndDate(booking.getBookingDate());
+                        res.setMaintenanceReason(maintenanceRequest.getIssueDescription());
+                        resourceRepository.save(res);
+                    }
+
+                } else if (request.getStatus() == BookingStatus.REJECTED) {
+                    maintenanceRequest.setMaintenanceStatus(MaintenanceStatus.REJECTED);
+                    maintenanceRequest.setAdminNotes(request.getReason());
+                }
+
+                maintenanceRequestRepository.save(maintenanceRequest);
+                log.info("MaintenanceRequest {} synced to {} after booking calendar action on booking {}",
+                        maintenanceRequest.getId(), maintenanceRequest.getMaintenanceStatus(), bookingId);
+
+                // Notify the technician properly (not just the generic booking notification)
+                User tech = userRepository.findById(maintenanceRequest.getTechnicianId()).orElse(null);
+                if (tech != null) {
+                    boolean isApproved = request.getStatus() == BookingStatus.APPROVED;
+                    String reasonMsg = request.getReason() != null ? "\nAdmin notes: " + request.getReason() : "";
+                    notificationService.sendNotification(
+                            tech.getId(),
+                            isApproved ? "✅ Maintenance Request Approved" : "❌ Maintenance Request Rejected",
+                            String.format("Your maintenance request for %s on %s at %s-%s has been %s.%s",
+                                    resource.getName(), booking.getBookingDate(),
+                                    booking.getStartTime(), booking.getEndTime(),
+                                    isApproved ? "APPROVED. You can now start maintenance on the scheduled date." : "REJECTED.",
+                                    reasonMsg),
+                            "MAINTENANCE_UPDATE"
+                    );
+                }
+            });
+        }
 
         // Send notification to user about status change
         String statusMessage = request.getStatus() == BookingStatus.APPROVED ?

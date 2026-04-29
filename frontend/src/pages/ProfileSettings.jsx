@@ -18,7 +18,8 @@ const ProfileSettings = () => {
     const [studentId, setStudentId] = useState('');
     const [technicianSpecialization, setTechnicianSpecialization] = useState('IT_SUPPORT');
     const [experienceYears, setExperienceYears] = useState('');
-    
+    const [gender, setGender] = useState('');
+
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -32,18 +33,19 @@ const ProfileSettings = () => {
             const response = await api.get('/users/me');
             const data = response.data;
             setProfileData(data);
-            
+
             const nameParts = (data.fullName || '').split(' ');
             setFirstName(nameParts[0] || '');
             setLastName(nameParts.slice(1).join(' ') || '');
-            
+
             setDepartment(data.department || '');
             setQualification(data.qualification || '');
             setDesignation(data.designation || '');
             setStudentId(data.studentId || '');
             setTechnicianSpecialization(data.technicianSpecialization || 'IT_SUPPORT');
             setExperienceYears(data.experienceYears || '');
-            
+            setGender(data.gender || '');
+
             setLoading(false);
         } catch (error) {
             toast.error('Failed to load profile data');
@@ -57,6 +59,7 @@ const ProfileSettings = () => {
                 firstName,
                 lastName,
                 department,
+                gender,
                 qualification: profileData.role === 'STAFF' ? qualification : null,
                 designation: profileData.role === 'STAFF' ? designation : null,
                 studentId: profileData.role === 'STUDENT' ? studentId : null,
@@ -64,7 +67,7 @@ const ProfileSettings = () => {
                 experienceYears: profileData.role === 'TECHNICIAN' ? parseInt(experienceYears) || 0 : null
             });
             setProfileData(response.data);
-            
+
             updateUser({
                 ...user,
                 fullName: response.data.fullName,
@@ -128,11 +131,11 @@ const ProfileSettings = () => {
                     <div className="bg-white p-5 sm:p-8 rounded-2xl border border-gray-100 shadow-sm relative pt-12 overflow-hidden">
                         {/* Decorative background element */}
                         <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl pointer-events-none" />
-                        
+
                         <div className="absolute top-0 left-8 -translate-y-1/2 w-12 h-12 bg-white rounded-xl border border-gray-100 flex items-center justify-center shadow-md">
                             <User className="w-6 h-6 text-primary" />
                         </div>
-                        
+
                         <div className="mb-8">
                             <h3 className="text-lg sm:text-xl font-bold text-text-primary">Profile Information</h3>
                             <p className="text-sm text-text-secondary mt-1">Update your personal details and how others see you on the hub.</p>
@@ -164,7 +167,7 @@ const ProfileSettings = () => {
 
                         {/* Role Specific Fields */}
                         <div className="bg-primary/5 p-6 rounded-2xl border border-primary/10 mb-8 animate-in zoom-in-95 duration-500">
-                             {profileData?.role === 'STUDENT' && (
+                            {profileData?.role === 'STUDENT' && (
                                 <div className="space-y-1.5">
                                     <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">Student ID Number</label>
                                     <input type="text" value={studentId} onChange={e => setStudentId(e.target.value)} placeholder="e.g. IT21004455" className="w-full px-4 py-2.5 bg-white border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" />
@@ -203,6 +206,22 @@ const ProfileSettings = () => {
                             )}
                         </div>
 
+                        {/* Add this after the department/role grid */}
+                        <div className="space-y-1.5 mb-6">
+                            <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">Gender</label>
+                            <select
+                                value={gender}
+                                onChange={e => setGender(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-xl text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                            >
+                                <option value="">Select gender</option>
+                                <option value="MALE">Male</option>
+                                <option value="FEMALE">Female</option>
+                                <option value="OTHER">Other</option>
+                                <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+                            </select>
+                        </div>
+
                         <div className="flex justify-end pt-4 border-t border-gray-50">
                             <button onClick={handleProfileUpdate} className="px-8 py-3 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary-hover shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]">
                                 Update Profile
@@ -217,7 +236,7 @@ const ProfileSettings = () => {
                         <div className="absolute top-0 left-6 -translate-y-1/2 w-10 h-10 bg-white rounded-xl border border-gray-100 flex items-center justify-center shadow-md">
                             <ShieldCheck className="w-5 h-5 text-primary" />
                         </div>
-                        
+
                         <div className="flex justify-between items-start mb-6">
                             <div>
                                 <h3 className="text-lg font-bold">Security Health</h3>
@@ -237,43 +256,18 @@ const ProfileSettings = () => {
                             Multi-Factor Authentication adds an extra layer of security to your institutional account by requiring more than just a password to sign in.
                         </p>
 
-                        <button 
+                        <button
                             onClick={toggleMFA}
-                            className={`w-full py-3 rounded-xl text-sm font-bold transition-all shadow-sm border ${
-                                profileData?.twoFactorEnabled 
-                                ? 'bg-white text-red-500 border-red-100 hover:bg-red-50' 
-                                : 'bg-primary text-white border-transparent hover:bg-primary-hover'
-                            }`}
+                            className={`w-full py-3 rounded-xl text-sm font-bold transition-all shadow-sm border ${profileData?.twoFactorEnabled
+                                    ? 'bg-white text-red-500 border-red-100 hover:bg-red-50'
+                                    : 'bg-primary text-white border-transparent hover:bg-primary-hover'
+                                }`}
                         >
                             {profileData?.twoFactorEnabled ? 'Disable 2FA Security' : 'Enable 2FA Protection'}
                         </button>
                     </div>
 
-                    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm relative pt-12">
-                         <div className="absolute top-0 left-6 -translate-y-1/2 w-10 h-10 bg-white rounded-xl border border-gray-100 flex items-center justify-center shadow-md">
-                            <div className="w-6 h-6 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">•••</div>
-                        </div>
-                        <h3 className="text-lg font-bold mb-6">Access Credentials</h3>
 
-                        <div className="space-y-4 mb-6">
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Current Password</label>
-                                <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} placeholder="••••••••" className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" />
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">New Password</label>
-                                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min. 8 characters" className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" />
-                            </div>
-                        </div>
-
-                        <button 
-                            onClick={handlePasswordUpdate}
-                            disabled={!currentPassword || !newPassword}
-                            className="w-full py-3 bg-white border border-gray-100 text-text-primary rounded-xl text-sm font-bold hover:bg-gray-50 transition-all shadow-sm disabled:opacity-50"
-                        >
-                            Update Credentials
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>

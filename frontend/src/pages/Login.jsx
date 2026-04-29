@@ -26,7 +26,7 @@ const Login = () => {
 
     const handleGoogleLogin = () => {
         setLoading(true);
-        window.location.href = 'http://localhost:8080/oauth2/authorization/google';
+        window.location.href = `${import.meta.env.VITE_BACKEND_BASE_URL}/oauth2/authorization/google`;
     };
 
     return (
@@ -117,7 +117,7 @@ const Login = () => {
                                 <input
                                     name="email"
                                     type="email"
-                                    placeholder="e.g. admin@campus.com"
+                                    placeholder="Enter your email"
                                     value={credentials.email}
                                     onChange={handleChange}
                                     required

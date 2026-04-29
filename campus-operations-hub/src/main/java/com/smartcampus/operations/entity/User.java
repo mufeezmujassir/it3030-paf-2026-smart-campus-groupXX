@@ -49,6 +49,9 @@ public class User {
     @Column(name = "student_id", length = 50)
     private String studentId;
 
+    @Column(length = 20)
+    private String gender;
+
     // Technician specific
     @Column(name = "technician_specialization", length = 100)
     private String technicianSpecialization;

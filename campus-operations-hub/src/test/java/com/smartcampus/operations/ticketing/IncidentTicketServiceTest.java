@@ -1,4 +1,4 @@
-package com.smartcampus.operations.service;
+package com.smartcampus.operations.ticketing;
 
 import com.smartcampus.operations.dto.*;
 import com.smartcampus.operations.entity.*;

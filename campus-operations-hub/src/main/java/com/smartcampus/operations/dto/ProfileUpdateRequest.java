@@ -15,6 +15,8 @@ public class ProfileUpdateRequest {
     
     @NotBlank(message = "Last Name is required")
     private String lastName;
+
+    private String gender;
     
     private String department;
     private String studentId;

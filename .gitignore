@@ -1,2 +1,5 @@
 
 application.properties
+deploy/*
+!deploy/*.example
+!deploy/README.md

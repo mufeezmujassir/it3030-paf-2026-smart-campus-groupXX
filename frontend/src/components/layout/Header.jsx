@@ -138,18 +138,6 @@ const Header = ({ toggleSidebar }) => {
                         <Leaf className="w-6 h-6 group-hover:rotate-12 transition-transform duration-300" />
                         <span className="text-lg font-black tracking-tighter">MapleLink</span>
                     </div>
-
-                    {/* Dashboard Search */}
-                    <div className="hidden md:flex flex-1 max-w-lg ml-4">
-                        <div className="relative group w-full">
-                            <Search className="w-4 h-4 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2 group-focus-within:text-primary transition-colors" />
-                            <input
-                                type="text"
-                                placeholder="Unified campus search..."
-                                className="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-transparent rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white transition-all shadow-inner"
-                            />
-                        </div>
-                    </div>
                 </div>
 
                 {/* Right: Actions & Profile */}

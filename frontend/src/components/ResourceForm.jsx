@@ -6,6 +6,7 @@ const ResourceForm = ({ initialData = null, onSave, onCancel }) => {
     const [types, setTypes] = useState([]);
     const [selectedFile, setSelectedFile] = useState(null);
     const [imagePreview, setImagePreview] = useState(null);
+    const [errors, setErrors] = useState({});
     const [form, setForm] = useState({
         name: '',
         type: '',
@@ -29,7 +30,7 @@ const ResourceForm = ({ initialData = null, onSave, onCancel }) => {
             // Show existing image if editing
             if (initialData.imageUrl) {
                 setImagePreview(initialData.imageUrl.startsWith('/api')
-                    ? `http://localhost:8080${initialData.imageUrl}`
+                    ? `${import.meta.env.VITE_BACKEND_BASE_URL}${initialData.imageUrl}`
                     : initialData.imageUrl);
             }
         }
@@ -45,9 +46,21 @@ const ResourceForm = ({ initialData = null, onSave, onCancel }) => {
         }
     };
 
+    const hasInvalidChars = (str) => /[^a-zA-Z\s]/.test(str);
+
     const onChange = (e) => {
         const { name, value } = e.target;
-        setForm(prev => ({ ...prev, [name]: value }));
+        if (name === 'name' || name === 'subtype') {
+            const sanitized = value.replace(/[^a-zA-Z\s]/g, '');
+            setForm(prev => ({ ...prev, [name]: sanitized }));
+            if (hasInvalidChars(value)) {
+                setErrors(prev => ({ ...prev, [name]: `${name === 'name' ? 'Name' : 'Subtype'} can only contain letters and spaces` }));
+            } else {
+                setErrors(prev => { const copy = { ...prev }; delete copy[name]; return copy; });
+            }
+        } else {
+            setForm(prev => ({ ...prev, [name]: value }));
+        }
     };
 
     const onFileChange = (e) => {
@@ -60,7 +73,7 @@ const ResourceForm = ({ initialData = null, onSave, onCancel }) => {
         } else {
             setImagePreview(initialData?.imageUrl
                 ? (initialData.imageUrl.startsWith('/api')
-                    ? `http://localhost:8080${initialData.imageUrl}`
+                    ? `${import.meta.env.VITE_BACKEND_BASE_URL}${initialData.imageUrl}`
                     : initialData.imageUrl)
                 : null);
         }
@@ -68,6 +81,19 @@ const ResourceForm = ({ initialData = null, onSave, onCancel }) => {
 
     const submit = async (e) => {
         e.preventDefault();
+
+        const newErrors = {};
+        if (hasInvalidChars(form.name)) {
+            newErrors.name = 'Name can only contain letters and spaces';
+        }
+        if (hasInvalidChars(form.subtype)) {
+            newErrors.subtype = 'Subtype can only contain letters and spaces';
+        }
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            return;
+        }
+        setErrors({});
 
         const payload = {
             name: form.name,
@@ -132,8 +158,9 @@ const ResourceForm = ({ initialData = null, onSave, onCancel }) => {
                     value={form.name}
                     onChange={onChange}
                     required
-                    className="border border-gray-300 p-2.5 w-full rounded-lg outline-none focus:border-primary"
+                    className={`border p-2.5 w-full rounded-lg outline-none focus:border-primary ${errors.name ? 'border-red-400' : 'border-gray-300'}`}
                 />
+                {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -156,8 +183,9 @@ const ResourceForm = ({ initialData = null, onSave, onCancel }) => {
                         name="subtype"
                         value={form.subtype}
                         onChange={onChange}
-                        className="border border-gray-300 p-2.5 w-full rounded-lg outline-none focus:border-primary"
+                        className={`border p-2.5 w-full rounded-lg outline-none focus:border-primary ${errors.subtype ? 'border-red-400' : 'border-gray-300'}`}
                     />
+                    {errors.subtype && <p className="text-xs text-red-500 mt-1">{errors.subtype}</p>}
                 </div>
             </div>
 

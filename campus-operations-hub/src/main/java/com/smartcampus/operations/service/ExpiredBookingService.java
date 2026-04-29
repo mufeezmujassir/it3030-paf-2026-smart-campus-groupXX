@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +36,7 @@ public class ExpiredBookingService {
         log.info("========== INITIALIZING EXPIRED BOOKINGS CHECK ==========");
         processExpiredBookings(true);
         processExpiredMaintenanceBookings(true);
+        processUnansweredExtensionRequests();
         log.info("========== INITIAL EXPIRED BOOKINGS CHECK COMPLETE ==========");
     }
 
@@ -45,6 +47,7 @@ public class ExpiredBookingService {
         log.info("Checking for expired bookings...");
         processExpiredBookings(false);
         processExpiredMaintenanceBookings(false);
+        processUnansweredExtensionRequests();
     }
 
     // ── Existing: auto-reject PENDING bookings that have passed ──────────
@@ -205,5 +208,109 @@ public class ExpiredBookingService {
         return resourceRepository.findById(resourceId)
                 .map(Resource::getName)
                 .orElse(resourceId.toString().substring(0, 8));
+    }
+
+    /**
+     * Auto-cancel maintenance requests where admin never responded to extension request
+     */
+    private void processUnansweredExtensionRequests() {
+        // Find all extension requests pending admin approval
+        List<MaintenanceRequest> pendingExtensions = maintenanceRequestRepository
+                .findByMaintenanceStatus(MaintenanceStatus.EXTENSION_REQUESTED);
+
+        if (pendingExtensions.isEmpty()) {
+            return;
+        }
+
+        // Timeout: 3 days without admin response
+        LocalDateTime threeDaysAgo = LocalDateTime.now().minusDays(3);
+        int autoCancelledCount = 0;
+
+        for (MaintenanceRequest mr : pendingExtensions) {
+            // Check if this request has been waiting too long
+            if (mr.getUpdatedAt() != null && mr.getUpdatedAt().isBefore(threeDaysAgo)) {
+
+                // Get the associated booking
+                Booking booking = bookingRepository.findById(mr.getBookingId()).orElse(null);
+                if (booking == null) continue;
+
+                // Get the resource
+                Resource resource = resourceRepository.findById(booking.getResourceId()).orElse(null);
+                if (resource == null) continue;
+
+                log.warn("Auto-cancelling unanswered extension request for maintenance {} - waiting since {}",
+                        mr.getId(), mr.getUpdatedAt());
+
+                // 1. Cancel the booking
+                booking.setStatus(BookingStatus.CANCELLED);
+                booking.setAdminReason(String.format(
+                        "Auto-cancelled: Extension request was not reviewed by admin within 3 days. " +
+                                "Request submitted on %s. Please submit a new maintenance request if still needed.",
+                        mr.getUpdatedAt().toLocalDate()));
+                bookingRepository.save(booking);
+
+                // 2. Mark maintenance request as REJECTED
+                mr.setMaintenanceStatus(MaintenanceStatus.REJECTED);
+                mr.setAdminNotes(String.format(
+                        "Auto-rejected: Extension request unanswered for 3 days. " +
+                                "Requested: %d day(s) extension. Reason: %s",
+                        mr.getExtensionRequested(),
+                        mr.getExtensionReason() != null ? mr.getExtensionReason() : "No reason provided"));
+                maintenanceRequestRepository.save(mr);
+
+                // 3. Free the resource from maintenance mode
+                if (resource.getMaintenanceMode() != null && resource.getMaintenanceMode()) {
+                    resource.setMaintenanceMode(false);
+                    resource.setMaintenanceStartDate(null);
+                    resource.setMaintenanceEndDate(null);
+                    resource.setMaintenanceReason(null);
+                    resourceRepository.save(resource);
+                    log.info("Freed resource {} from maintenance mode due to unanswered extension request",
+                            resource.getName());
+                }
+
+                autoCancelledCount++;
+
+                // 4. Notify the technician
+                User technician = userRepository.findById(mr.getTechnicianId()).orElse(null);
+                if (technician != null) {
+                    notificationService.sendNotification(
+                            technician.getId(),
+                            "⚠️ Maintenance Auto-Cancelled - No Admin Response",
+                            String.format(
+                                    "Your extension request for %s has been auto-cancelled because no admin responded within 3 days.\n\n" +
+                                            "• Requested: %d day extension\n" +
+                                            "• Resource has been taken out of maintenance mode\n" +
+                                            "• Please submit a new maintenance request if the issue still needs attention",
+                                    resource.getName(),
+                                    mr.getExtensionRequested()),
+                            "MAINTENANCE_AUTO_CANCELLED"
+                    );
+                }
+
+                // 5. Notify admins about the auto-cancellation
+                List<User> admins = userRepository.findByRole(Role.ADMIN);
+                for (User admin : admins) {
+                    notificationService.sendNotification(
+                            admin.getId(),
+                            "⚠️ Extension Request Auto-Cancelled (No Response)",
+                            String.format(
+                                    "An extension request for %s was auto-cancelled because no admin responded within 3 days.\n\n" +
+                                            "• Technician: %s\n" +
+                                            "• Requested: %d days\n" +
+                                            "• Resource has been freed\n\n" +
+                                            "Please review unanswered extension requests regularly to avoid this.",
+                                    resource.getName(),
+                                    technician != null ? technician.getFullName() : "Unknown",
+                                    mr.getExtensionRequested()),
+                            "ADMIN_EXTENSION_TIMEOUT"
+                    );
+                }
+            }
+        }
+
+        if (autoCancelledCount > 0) {
+            log.info("Auto-cancelled {} maintenance requests due to unanswered extension requests", autoCancelledCount);
+        }
     }
 }

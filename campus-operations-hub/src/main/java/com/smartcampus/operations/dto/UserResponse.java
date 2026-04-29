@@ -19,6 +19,7 @@ public class UserResponse {
     private String email;
     private String authProvider;
     private String role;
+    private String gender;
     private String department;
     private String qualification;
     private String designation;

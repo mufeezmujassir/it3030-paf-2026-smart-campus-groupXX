@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import java.util.UUID;
@@ -27,4 +28,10 @@ public class ResourceResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String imageUrl;
+
+    // In ResourceResponse.java — ensure these fields exist:
+    private Boolean maintenanceMode;
+    private LocalDate maintenanceStartDate;
+    private LocalDate maintenanceEndDate;
+    private String maintenanceReason;
 }
