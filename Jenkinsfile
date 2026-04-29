@@ -2,16 +2,16 @@ pipeline {
     agent any
 
     environment {
-        AWS_REGION     = 'ap-south-1'
-        AWS_ACCOUNT_ID = '992258813186'
+        AWS_REGION     = 'AWS_REGION'
+        AWS_ACCOUNT_ID = 'ACC_ID'
 
         BACKEND_REPO  = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/smart-campus-backend"
         FRONTEND_REPO = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/smart-campus-frontend"
 
         IMAGE_TAG = "${BUILD_NUMBER}"
 
-        APP_HOST = '10.0.0.192'
-        APP_USER = 'ubuntu'
+        APP_HOST = 'HOSTED_IP'
+        APP_USER = 'USER_NAME'
     }
 
     stages {
